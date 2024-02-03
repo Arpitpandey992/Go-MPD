@@ -4,6 +4,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 )
 
 func StartAndHandleServer() {
@@ -21,6 +22,8 @@ func handleIncomingConnections(listener net.Listener) {
 			log.Printf("failed to accept incoming connection request, error: %v", err)
 			continue
 		}
+		log.Print("successfully connected with incoming client")
+		_sendWelcomeMessageToConnectionClient(conn)
 		go handleConnection(conn)
 	}
 }
@@ -36,7 +39,7 @@ func getListener(protocol string, server_address string) net.Listener {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
-	buf := make([]byte, 50)
+	buf := make([]byte, 2500)
 	for {
 		n, err := conn.Read(buf)
 		if err != nil {
@@ -46,5 +49,32 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 		log.Printf("received: %q", buf[:n])
+		err = handleIncomingRequest(string(buf[:n]))
+		if err != nil {
+			log.Print("error: ", err)
+		}
+	}
+}
+
+func handleIncomingRequest(command string) error {
+	chunks := strings.Split(command, " ")
+	for i, chunk := range chunks {
+		chunks[i] = strings.TrimSpace(chunk)
+	}
+	requestType := chunks[0]
+	if requestType == "audio" {
+		err := HandleAudioRequest(chunks[1:])
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func _sendWelcomeMessageToConnectionClient(conn net.Conn) {
+	welcomeMessage := "Welcome to Go-MPD!\n"
+	_, err := conn.Write([]byte(welcomeMessage))
+	if err != nil {
+		log.Printf("error: could not send welcome message to %s, error: %s", conn.RemoteAddr(), err)
 	}
 }

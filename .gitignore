@@ -22,3 +22,6 @@ go.work
 
 # Music Files used for testing
 music/
+
+#debugging files
+__debug*
