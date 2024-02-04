@@ -19,7 +19,7 @@ func HandleAudioRequest(commands []string) error {
 }
 
 func playAudioFile(filePath string) error {
-	if !fileExists(filePath) {
+	if !doesFileExists(filePath) {
 		return fmt.Errorf("file does not exist: %s", filePath)
 	}
 	log.Printf("playing audio file at: %s", filePath)
@@ -31,7 +31,7 @@ func playAudioFile(filePath string) error {
 	return err
 }
 
-func fileExists(filePath string) bool {
+func doesFileExists(filePath string) bool {
 	_, err := os.Stat(filePath)
 	return !os.IsNotExist(err)
 }
