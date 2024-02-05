@@ -2,36 +2,47 @@ package server
 
 import (
 	"fmt"
-	"github.com/arpitpandey992/go-mpd/internal/audioplayer"
 	"log"
-	"os"
+
+	"github.com/arpitpandey992/go-mpd/internal/playbackmanager"
 )
 
-func HandleAudioRequest(commands []string) error {
-	mainCommand := commands[0]
-	if mainCommand == "play" {
-		err := playAudioFile(commands[1])
-		if err != nil {
-			return err
-		}
-	}
-	return fmt.Errorf("unknown command: %s", mainCommand)
+type AudioRequestsHandler struct {
+	PlaybackManager *playbackmanager.PlaybackManager
 }
 
-func playAudioFile(filePath string) error {
-	if !doesFileExists(filePath) {
-		return fmt.Errorf("file does not exist: %s", filePath)
+func getNewAudioRequestsHandler() *AudioRequestsHandler {
+	return &AudioRequestsHandler{
+		PlaybackManager: playbackmanager.GetNewPlaybackManager(),
 	}
-	log.Printf("playing audio file at: %s", filePath)
-	audioPlayer, err := audioplayer.CreateAudioPlayer(filePath)
+}
+
+func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) error {
+	mainCommand := commands[0]
+	switch mainCommand {
+	case "add":
+		return arh.AddToPlaybackQueue(commands[1])
+	case "play":
+		return arh.PlayCurrentTrackInQueue()
+	case "pause":
+		return arh.PauseCurrentlyPlayingTrack()
+	default:
+		return fmt.Errorf("unknown command: %s", mainCommand)
+	}
+}
+
+func (arh *AudioRequestsHandler) AddToPlaybackQueue(filePath string) error {
+	err := arh.PlaybackManager.AddAudioToQueue(filePath)
 	if err != nil {
 		return err
 	}
-	err = audioPlayer.Play()
-	return err
+	log.Printf("added audio file at: %s to playback queue", filePath)
+	return nil
 }
 
-func doesFileExists(filePath string) bool {
-	_, err := os.Stat(filePath)
-	return !os.IsNotExist(err)
+func (arh *AudioRequestsHandler) PlayCurrentTrackInQueue() error {
+	return arh.PlaybackManager.Play()
+}
+func (arh *AudioRequestsHandler) PauseCurrentlyPlayingTrack() error {
+	return arh.PlaybackManager.Pause()
 }
