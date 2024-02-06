@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/arpitpandey992/go-mpd/internal/utils"
 	"github.com/gopxl/beep"
 	"github.com/gopxl/beep/flac"
 	"github.com/gopxl/beep/mp3"
@@ -20,6 +21,10 @@ func logError(err error) error {
 }
 
 func IsFileSupported(filePath string) error {
+	fileExists, err := utils.DoesFileExistsInFileSystem(filePath)
+	if !fileExists {
+		return err
+	}
 	supportedExtensions := []string{".mp3", ".flac"}
 	fileExtension := strings.ToLower(filepath.Ext(filePath))
 	for _, extension := range supportedExtensions {
@@ -39,7 +44,6 @@ func CreateAudioPlayer(filePath string, callbackFunction func()) (*AudioPlayer, 
 	if logError(err) != nil {
 		return nil, err
 	}
-	defer audioFile.Close()
 	audioPlayer, err := getNewAudioPlayer(audioFile, callbackFunction)
 	if logError(err) != nil {
 		return nil, err
@@ -58,5 +62,5 @@ func getNewAudioPlayer(file *os.File, callbackfunc func()) (*AudioPlayer, error)
 		return nil, err
 	}
 	ctrl := &beep.Ctrl{Streamer: beep.Seq(streamer, beep.Callback(callbackfunc)), Paused: true}
-	return &AudioPlayer{Ctrl: ctrl, streamer: streamer, Format: format}, nil
+	return &AudioPlayer{Ctrl: ctrl, Streamer: streamer, Format: format}, nil
 }

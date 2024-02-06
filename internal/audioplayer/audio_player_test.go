@@ -7,12 +7,12 @@ import (
 
 func TestAudioPlayer(t *testing.T) {
 	musicFile := "../../music/ricor.flac"
-	audioPlayer, err := CreateAudioPlayer(musicFile)
+	audioPlayer, err := CreateAudioPlayer(musicFile, func() {})
 	if err != nil {
 		t.Error(err)
 	}
 	defer audioPlayer.Close()
-	err = audioPlayer.Play()
+	audioPlayer.Play()
 	if err != nil {
 		t.Error(err)
 	}

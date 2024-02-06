@@ -7,7 +7,7 @@ import (
 )
 
 type AudioPlayer struct {
-	streamer beep.StreamSeekCloser
+	Streamer beep.StreamSeekCloser
 	Format   beep.Format
 	Ctrl     *beep.Ctrl
 }
@@ -35,5 +35,5 @@ func (ap *AudioPlayer) IsPaused() bool {
 }
 
 func (ap *AudioPlayer) Close() error {
-	return ap.streamer.Close()
+	return ap.Streamer.Close()
 }

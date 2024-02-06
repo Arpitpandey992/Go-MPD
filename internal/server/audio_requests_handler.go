@@ -13,7 +13,7 @@ type AudioRequestsHandler struct {
 
 func getNewAudioRequestsHandler() *AudioRequestsHandler {
 	return &AudioRequestsHandler{
-		PlaybackManager: playbackmanager.GetNewPlaybackManager(),
+		PlaybackManager: playbackmanager.CreatePlaybackManager(),
 	}
 }
 
