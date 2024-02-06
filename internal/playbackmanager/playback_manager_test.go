@@ -2,19 +2,19 @@ package playbackmanager
 
 import (
 	"testing"
-	"time"
 )
 
 func TestPlaybackManager(t *testing.T) {
-	musicFile := "../../music/test.mp3"
+	musicFiles := []string{
+		"../../music/sample-3s.mp3",
+		"../../music/sample-9s.mp3",
+		"../../music/sample-12s.mp3",
+	}
 	playbackManager := CreatePlaybackManager()
-	err := playbackManager.AddAudioToQueue(musicFile)
+	err := playbackManager.AddAudioFilesToQueue(musicFiles...)
 	if err != nil {
 		t.Error(err)
 	}
-	err = playbackManager.Play()
-	if err != nil {
-		t.Error(err)
-	}
-	time.Sleep(10 * time.Second)
+	_ = playbackManager.Play()
+	<-playbackManager.QueuePlaybackFinished
 }
