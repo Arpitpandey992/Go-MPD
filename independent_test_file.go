@@ -1,20 +1,12 @@
 package main
 
-import (
-	"log"
-	"time"
-)
+import "time"
 
 func main() {
-	channel := make(chan bool, 5)
-	channel <- true
-	channel <- true
-	channel <- true
-	channel <- true
-	channel <- true
-
-	for i := 0; i < 6; i++ {
-		log.Print(<-channel)
-		time.Sleep(3 * time.Second)
-	}
+	ch := make(chan int)
+	go func(ch chan int) {
+		time.Sleep(10 * time.Second)
+		// print(<-ch)
+	}(ch)
+	ch <- 10 /*Blocked: No routine is waiting for the data to be consumed from the channel */
 }

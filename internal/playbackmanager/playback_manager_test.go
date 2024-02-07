@@ -6,6 +6,7 @@ import (
 
 func TestPlaybackManager(t *testing.T) {
 	musicFiles := []string{
+		// "../../music/ricor.flac",
 		"../../music/sample-3s.mp3",
 		"../../music/sample-9s.mp3",
 		"../../music/sample-12s.mp3",
