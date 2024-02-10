@@ -55,7 +55,7 @@ func handleConnection(conn net.Conn, handlers *Handlers) {
 			return
 		}
 		log.Printf("received: %q", buf[:n])
-		err = handleIncomingRequest(string(buf[:n]), handlers)
+		err = handleIncomingRequest(string(buf[:n]), conn, handlers)
 		if err != nil {
 			log.Print("error: ", err)
 			_ = sendMessageToConnectionClient("error: "+err.Error(), conn)
@@ -63,20 +63,32 @@ func handleConnection(conn net.Conn, handlers *Handlers) {
 	}
 }
 
-func handleIncomingRequest(command string, handlers *Handlers) error {
+func handleIncomingRequest(command string, conn net.Conn, handlers *Handlers) error {
 	chunks := breakCommandIntoChunks(command)
+	log.Printf("commands: %s", strings.Join(chunks, ", "))
 	for i, chunk := range chunks {
 		chunks[i] = strings.TrimSpace(chunk)
 	}
 	if len(chunks) == 0 {
-		return fmt.Errorf("invalid command: %s", command)
+		return nil
 	}
 	requestType := chunks[0]
 	switch requestType {
 	case "audio":
-		return handlers.audioRequestHandler.HandleAudioRequest(chunks[1:])
+		if len(chunks) < 2 {
+			return fmt.Errorf("audio command expects at least one argument")
+		}
+		returnMessage, err := handlers.audioRequestHandler.HandleAudioRequest(chunks[1:])
+		if err != nil {
+			return err
+		}
+		if returnMessage != "" {
+			_ = sendMessageToConnectionClient(returnMessage, conn)
+		}
+	default:
+		return fmt.Errorf("invalid request type: %s", requestType)
 	}
-	return fmt.Errorf("invalid request type: %s", requestType)
+	return nil
 }
 
 func sendWelcomeMessageToConnectionClient(conn net.Conn) {

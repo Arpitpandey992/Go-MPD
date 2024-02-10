@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"log"
+	"path"
 
 	"github.com/arpitpandey992/go-mpd/internal/playbackmanager"
 )
@@ -17,7 +18,7 @@ func getNewAudioRequestsHandler() *AudioRequestsHandler {
 	}
 }
 
-func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) error {
+func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, error) {
 	mainCommand := commands[0]
 	switch mainCommand {
 	case "add":
@@ -27,22 +28,30 @@ func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) error {
 	case "pause":
 		return arh.PauseCurrentlyPlayingTrack()
 	default:
-		return fmt.Errorf("unknown command: %s", mainCommand)
+		return "", fmt.Errorf("unknown audio playback command: %s", mainCommand)
 	}
 }
 
-func (arh *AudioRequestsHandler) AddToPlaybackQueue(filePath string) error {
-	err := arh.PlaybackManager.AddAudioFilesToQueue(filePath)
+func (arh *AudioRequestsHandler) AddToPlaybackQueue(filePath string) (string, error) {
+	err := arh.PlaybackManager.AddAudioFileToQueue(filePath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	log.Printf("added audio file at: %s to playback queue", filePath)
-	return nil
+	return fmt.Sprintf("added %v to playback queue", path.Base(filePath)), nil
 }
 
-func (arh *AudioRequestsHandler) PlayCurrentTrackInQueue() error {
-	return arh.PlaybackManager.Play()
+func (arh *AudioRequestsHandler) PlayCurrentTrackInQueue() (string, error) {
+	err := arh.PlaybackManager.Play()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
 }
-func (arh *AudioRequestsHandler) PauseCurrentlyPlayingTrack() error {
-	return arh.PlaybackManager.Pause()
+func (arh *AudioRequestsHandler) PauseCurrentlyPlayingTrack() (string, error) {
+	err := arh.PlaybackManager.Pause()
+	if err != nil {
+		return "", nil
+	}
+	return fmt.Sprintf("Paused: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
 }

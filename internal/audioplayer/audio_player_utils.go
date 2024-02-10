@@ -22,8 +22,11 @@ func logError(err error) error {
 
 func IsFileSupported(filePath string) error {
 	fileExists, err := utils.DoesFileExistsInFileSystem(filePath)
-	if !fileExists {
+	if err != nil {
 		return err
+	}
+	if !fileExists {
+		return fmt.Errorf("file does not exist at: %s", filePath)
 	}
 	supportedExtensions := []string{".mp3", ".flac"}
 	fileExtension := strings.ToLower(filepath.Ext(filePath))
