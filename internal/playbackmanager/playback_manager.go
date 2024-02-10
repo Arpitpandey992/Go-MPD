@@ -78,11 +78,14 @@ func (pm *PlaybackManager) Next() {
 		pm.audioPlayer.Close()
 		pm.audioPlayer = nil
 	}
-	if pm.QueuePosition >= len(pm.playbackQueue) {
-		pm.QueuePlaybackFinished <- true
-		log.Print("reached the end of playback queue")
-	}
 	pm.QueuePosition++
+	if pm.QueuePosition >= len(pm.playbackQueue) {
+		go func() {
+			pm.QueuePlaybackFinished <- true
+		}()
+		log.Print("reached the end of playback queue")
+		return
+	}
 }
 
 func (pm *PlaybackManager) Play() error {
@@ -128,9 +131,9 @@ func (pm *PlaybackManager) addAudioFileToQueue(filePath string) error {
 	if err != nil {
 		return err
 	}
-	go func(pm *PlaybackManager) {
+	go func() {
 		pm.nextTrackAdded <- true
-	}(pm) // Trying to simulate an infinite buffer
+	}() // Trying to simulate an infinite buffer
 	pm.playbackQueue = append(pm.playbackQueue, filePath)
 	return nil
 }
@@ -151,9 +154,9 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
 	if err != nil {
 		return err
 	}
-	go func(pm *PlaybackManager) {
+	go func() {
 		pm.newAudioPlayerCreated <- true
-	}(pm)
+	}()
 	log.Print("new audioplayer created successfully")
 	return nil
 }
