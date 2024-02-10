@@ -47,7 +47,7 @@ func CreatePlaybackManager() *PlaybackManager {
 		playbackQueue:         []string{},
 		audioPlayer:           nil,
 		isQueuePaused:         true,
-		nextTrackAdded:        make(chan bool, bufferSize),
+		nextTrackAdded:        make(chan bool),
 		trackPlaybackFinished: make(chan bool),
 		newAudioPlayerCreated: make(chan bool),
 	}
@@ -87,7 +87,7 @@ func (pm *PlaybackManager) Next() {
 
 func (pm *PlaybackManager) Play() error {
 	if pm.audioPlayer == nil {
-		return fmt.Errorf("AudioPlayer not ready")
+		<-pm.newAudioPlayerCreated
 	}
 	if !pm.audioPlayer.IsPaused() {
 		return fmt.Errorf("%s is already playing", pm.currentTrackName())
@@ -117,6 +117,7 @@ func (pm *PlaybackManager) waitAndManagePlayback() {
 			log.Printf("error while creating audio player for %s [skipped], error: %v", pm.currentTrackName(), err)
 			pm.Next()
 		} else {
+			log.Printf("waiting for %s to finish playing", pm.currentTrackName())
 			<-pm.trackPlaybackFinished // blocking till playback is finished
 		}
 	}
@@ -127,7 +128,9 @@ func (pm *PlaybackManager) addAudioFileToQueue(filePath string) error {
 	if err != nil {
 		return err
 	}
-	pm.nextTrackAdded <- true
+	go func(pm *PlaybackManager) {
+		pm.nextTrackAdded <- true
+	}(pm) // Trying to simulate an infinite buffer
 	pm.playbackQueue = append(pm.playbackQueue, filePath)
 	return nil
 }
@@ -148,7 +151,10 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
 	if err != nil {
 		return err
 	}
-	pm.newAudioPlayerCreated <- true
+	go func(pm *PlaybackManager) {
+		pm.newAudioPlayerCreated <- true
+	}(pm)
+	log.Print("new audioplayer created successfully")
 	return nil
 }
 
