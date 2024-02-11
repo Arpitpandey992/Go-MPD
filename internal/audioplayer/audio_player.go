@@ -10,6 +10,7 @@ import (
 
 type AudioPlayer struct {
 	//TODO: Move from StreamSeekCloser to StreamSeeker
+	//      Remove some unnecessary Speaker.lock() statements
 	Streamer beep.StreamSeekCloser // Streamer is available to manipulate seek position
 	Format   beep.Format           // track metadata
 	Ctrl     *beep.Ctrl            // for play/pause functionality
@@ -35,11 +36,23 @@ func (ap *AudioPlayer) Pause() {
 	speaker.Unlock()
 }
 
-func (ap *AudioPlayer) getCurrentPositionSeconds() time.Duration {
-	speaker.Lock()
-	duration:= ap.Format.SampleRate.D(ap.Streamer.Position()).Round(time.Second)
-	speaker.Unlock()
-	return duration
+func (ap *AudioPlayer) getCurrentPosition() time.Duration {
+	// TODO: check why Speaker.lock() is recommended here, this might result in race condition
+	duration := ap.Format.SampleRate.D(ap.Streamer.Position())
+	return duration.Truncate(time.Second)
+}
+
+func (ap *AudioPlayer) Seek(seekTime time.Duration) error {
+	// Seeks to the given time (granular upto seconds of accuracy)
+	log.Printf("seeking to %v", seekTime)
+	samplesToSeek := int64(ap.Format.SampleRate) * int64(seekTime.Seconds())
+	ap.Pause()
+	err := ap.Streamer.Seek(int(samplesToSeek))
+	ap.Play()
+	if err != nil {
+		log.Printf("error while seeking: %v", err)
+	}
+	return err
 }
 
 func (ap *AudioPlayer) IsPaused() bool {

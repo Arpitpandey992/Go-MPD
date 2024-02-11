@@ -53,7 +53,7 @@ func CreatePlaybackManager() *PlaybackManager {
 		trackPlaybackFinished: make(chan bool),
 		newAudioPlayerCreated: make(chan bool),
 	}
-	_ = speaker.Init(beep.SampleRate(44000), 0) // Initializing the speaker, resampling must be done before creating on AudioPlayer
+	_ = speaker.Init(beep.SampleRate(44100), 0) // Initializing the speaker, resampling must be done after creation of AudioPlayer
 	go playbackManager.waitAndManagePlayback()
 	return &playbackManager
 }

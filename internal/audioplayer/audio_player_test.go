@@ -19,6 +19,17 @@ func TestAudioPlayer(t *testing.T) {
 	}
 	defer audioPlayer.Close()
 	audioPlayer.Play()
+	go func() {
+		<-time.After(time.Second * 10)
+		audioPlayer.Pause()
+		<-time.After(time.Second * 10)
+		audioPlayer.Play()
+		<-time.After(time.Second * 10)
+		err := audioPlayer.Seek(time.Second * 0)
+		if err != nil {
+			t.Error(err)
+		}
+	}()
 	if err != nil {
 		t.Error(err)
 	}
@@ -27,7 +38,7 @@ func TestAudioPlayer(t *testing.T) {
 		case <-done:
 			return
 		case <-time.After(time.Second):
-			fmt.Println(audioPlayer.getCurrentPositionSeconds())
+			fmt.Println(audioPlayer.getCurrentPosition())
 		}
 	}
 }
