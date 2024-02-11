@@ -21,11 +21,20 @@ func TestAudioPlayer(t *testing.T) {
 	audioPlayer.Play()
 	go func() {
 		<-time.After(time.Second * 10)
+		fmt.Println("pausing playback")
 		audioPlayer.Pause()
 		<-time.After(time.Second * 10)
+		fmt.Println("resuming playback")
 		audioPlayer.Play()
 		<-time.After(time.Second * 10)
+		fmt.Println("restarting playback")
 		err := audioPlayer.Seek(time.Second * 0)
+		if err != nil {
+			t.Error(err)
+		}
+		<-time.After(time.Second * 10)
+		fmt.Println("seeking to 23 seconds")
+		err = audioPlayer.Seek(time.Second * 23)
 		if err != nil {
 			t.Error(err)
 		}
