@@ -106,27 +106,45 @@ func (pm *PlaybackManager) Next() {
 
 func (pm *PlaybackManager) Play() error {
 	if pm.QueuePosition == len(pm.playbackQueue) {
-		return fmt.Errorf("no song is playing")
+		return fmt.Errorf("no active audio file in queue")
 	}
-	if pm.audioPlayer == nil {
+	if pm.audioPlayer == nil { // TODO: This causes race condition, Protect this section with a Mutex, use double-checked locking for optimization
 		<-pm.newAudioPlayerCreated
 	}
 	if !pm.isQueuePaused {
-		return fmt.Errorf("%s is already playing", pm.GetCurrentTrackName())
+		return fmt.Errorf("queue is already playing")
 	}
-	pm.isQueuePaused = false
+	pm.isQueuePaused = false // TODO: Protect this variable with a mutex
 	log.Printf("playing: %s", pm.GetCurrentTrackName())
 	pm.audioPlayer.Play()
 	return nil
 }
 
 func (pm *PlaybackManager) Pause() error {
-	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil || pm.isQueuePaused {
-		return fmt.Errorf("no song is playing")
+	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
+		return fmt.Errorf("no active audio file in queue")
+	}
+	if pm.isQueuePaused {
+		return fmt.Errorf("queue is already paused")
 	}
 	pm.isQueuePaused = true
 	pm.audioPlayer.Pause()
 	return nil
+}
+
+func (pm *PlaybackManager) Stop() error {
+	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
+		return fmt.Errorf("no active audio file in queue")
+	}
+	pm.audioPlayer.Stop()
+	return nil
+}
+
+func (pm *PlaybackManager) Seek(seekTime time.Duration) error {
+	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
+		return fmt.Errorf("no active audio file in queue")
+	}
+	return pm.audioPlayer.Seek(seekTime)
 }
 
 // Private Functions

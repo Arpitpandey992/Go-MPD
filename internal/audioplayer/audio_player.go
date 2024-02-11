@@ -36,7 +36,7 @@ func (ap *AudioPlayer) Pause() {
 	speaker.Unlock()
 }
 
-func (ap *AudioPlayer) getCurrentPosition() time.Duration {
+func (ap *AudioPlayer) GetCurrentPosition() time.Duration {
 	// TODO: check why Speaker.lock() is recommended here, this might result in race condition
 	duration := ap.Format.SampleRate.D(ap.Streamer.Position())
 	return duration.Truncate(time.Second)
@@ -53,6 +53,12 @@ func (ap *AudioPlayer) Seek(seekTime time.Duration) error {
 		log.Printf("error while seeking: %v", err)
 	}
 	return err
+}
+
+func (ap *AudioPlayer) Stop() {
+	// Stops playback and moves seeker to beginning
+	ap.Pause()
+	_ = ap.Seek(time.Duration(0)) //not checking error as it is usually for out of bound
 }
 
 func (ap *AudioPlayer) IsPaused() bool {

@@ -47,7 +47,7 @@ func TestAudioPlayer(t *testing.T) {
 		case <-done:
 			return
 		case <-time.After(time.Second):
-			fmt.Println(audioPlayer.getCurrentPosition())
+			fmt.Println(audioPlayer.GetCurrentPosition())
 		}
 	}
 }
