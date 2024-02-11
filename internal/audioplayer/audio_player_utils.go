@@ -38,7 +38,7 @@ func IsFileSupported(filePath string) error {
 	return fmt.Errorf("audio format: %s is not supported yet", fileExtension)
 }
 
-func CreateAudioPlayer(filePath string, callbackFunction func(), startPaused bool) (*AudioPlayer, error) {
+func CreateAudioPlayer(filePath string, callbackFunction func()) (*AudioPlayer, error) {
 	err := IsFileSupported(filePath)
 	if logError(err) != nil {
 		return nil, err
@@ -47,14 +47,14 @@ func CreateAudioPlayer(filePath string, callbackFunction func(), startPaused boo
 	if logError(err) != nil {
 		return nil, err
 	}
-	audioPlayer, err := getNewAudioPlayer(audioFile, callbackFunction, startPaused)
+	audioPlayer, err := getNewAudioPlayer(audioFile, callbackFunction)
 	if logError(err) != nil {
 		return nil, err
 	}
 	return audioPlayer, nil
 }
 
-func getNewAudioPlayer(file *os.File, callbackfunc func(), startPaused bool) (*AudioPlayer, error) {
+func getNewAudioPlayer(file *os.File, callbackfunc func()) (*AudioPlayer, error) {
 	fileFormat := strings.ToLower(filepath.Ext(file.Name()))
 	var DecoderMap = map[string]func(*os.File) (s beep.StreamSeekCloser, format beep.Format, err error){
 		".mp3":  func(file *os.File) (s beep.StreamSeekCloser, format beep.Format, err error) { return mp3.Decode(file) },
@@ -64,6 +64,6 @@ func getNewAudioPlayer(file *os.File, callbackfunc func(), startPaused bool) (*A
 	if logError(err) != nil {
 		return nil, err
 	}
-	ctrl := &beep.Ctrl{Streamer: beep.Seq(streamer, beep.Callback(callbackfunc)), Paused: startPaused}
+	ctrl := &beep.Ctrl{Streamer: beep.Seq(streamer, beep.Callback(callbackfunc)), Paused: true}
 	return &AudioPlayer{Ctrl: ctrl, Streamer: streamer, Format: format}, nil
 }

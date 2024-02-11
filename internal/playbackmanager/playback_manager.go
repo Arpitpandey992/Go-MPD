@@ -8,13 +8,14 @@ import (
 	"time"
 
 	"github.com/arpitpandey992/go-mpd/internal/audioplayer"
+	"github.com/gopxl/beep"
 	"github.com/gopxl/beep/speaker"
 )
 
 /*
 TODOs
 look at individual TODO marked around code
-* improve logging
+* improve logging to be multilevel
 * move pm.playbackQueue[pm.QueuePosition] to a function for getting currently playing track's name (and path as well)
 * make add AudioFilesToQueue non blocking
 */
@@ -52,6 +53,7 @@ func CreatePlaybackManager() *PlaybackManager {
 		trackPlaybackFinished: make(chan bool),
 		newAudioPlayerCreated: make(chan bool),
 	}
+	_ = speaker.Init(beep.SampleRate(44000), 0) // Initializing the speaker, resampling must be done before creating on AudioPlayer
 	go playbackManager.waitAndManagePlayback()
 	return &playbackManager
 }
@@ -81,7 +83,7 @@ func (pm *PlaybackManager) AddAudioFileToQueue(filePath string) error {
 	}
 	go func() {
 		pm.nextTrackAdded <- true
-	}() // Trying to simulate an infinite buffer
+	}() // Trying to simulate an infinite buffer, instead of blocking here, this will send the signal at it's own leisure
 	pm.playbackQueue = append(pm.playbackQueue, filePath)
 	return nil
 }
@@ -109,7 +111,7 @@ func (pm *PlaybackManager) Play() error {
 	if pm.audioPlayer == nil {
 		<-pm.newAudioPlayerCreated
 	}
-	if !pm.audioPlayer.IsPaused() {
+	if !pm.isQueuePaused {
 		return fmt.Errorf("%s is already playing", pm.GetCurrentTrackName())
 	}
 	pm.isQueuePaused = false
@@ -119,7 +121,7 @@ func (pm *PlaybackManager) Play() error {
 }
 
 func (pm *PlaybackManager) Pause() error {
-	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil || pm.audioPlayer.IsPaused() {
+	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil || pm.isQueuePaused {
 		return fmt.Errorf("no song is playing")
 	}
 	pm.isQueuePaused = true
@@ -127,6 +129,7 @@ func (pm *PlaybackManager) Pause() error {
 	return nil
 }
 
+// Private Functions
 func (pm *PlaybackManager) waitAndManagePlayback() {
 	for {
 		<-pm.nextTrackAdded // creation of new AudioPlayer is blocked till a new track is added
@@ -151,8 +154,7 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
 			pm.trackPlaybackFinished <- true
 		}()
 	}
-	startPaused := pm.isQueuePaused
-	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying, startPaused)
+	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying)
 	if err != nil {
 		return err
 	}
@@ -169,9 +171,10 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
 }
 
 func (pm *PlaybackManager) initSpeakerOrResample() error {
+	// TODO: Init at the start only, then Resample every time
 	// make sure this init call only happens if the new samplerate is different from the earlier playing samplerate
 	// resample should be used here, but there is a quality concern as it resamples it
-	err := speaker.Init(pm.audioPlayer.Format.SampleRate, pm.audioPlayer.Format.SampleRate.N(time.Second/10)) // TODO: use Resample instead
+	err := speaker.Init(pm.audioPlayer.Format.SampleRate, pm.audioPlayer.Format.SampleRate.N(time.Second/10))
 	if err != nil {
 		return err
 	}
