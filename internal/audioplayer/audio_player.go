@@ -46,19 +46,15 @@ func (ap *AudioPlayer) Seek(seekTime time.Duration) error {
 	// Seeks to the given time (granular upto seconds of accuracy)
 	log.Printf("seeking to %v", seekTime)
 	samplesToSeek := int64(ap.Format.SampleRate) * int64(seekTime.Seconds())
-	ap.Pause()
-	err := ap.Streamer.Seek(int(samplesToSeek))
-	ap.Play()
-	if err != nil {
-		log.Printf("error while seeking: %v", err)
-	}
-	return err
-}
 
-func (ap *AudioPlayer) Stop() {
-	// Stops playback and moves seeker to beginning
-	ap.Pause()
-	_ = ap.Seek(time.Duration(0)) //not checking error as it is usually for out of bound
+	returnValue := ap.runWithAudioPlayerLock(func() interface{} { return ap.Streamer.Seek(int(samplesToSeek)) })
+	if err, ok := returnValue.(error); ok {
+		if err != nil {
+			log.Printf("error while seeking: %v", err)
+		}
+		return err
+	}
+	return nil
 }
 
 func (ap *AudioPlayer) IsPaused() bool {
@@ -67,4 +63,15 @@ func (ap *AudioPlayer) IsPaused() bool {
 
 func (ap *AudioPlayer) Close() error {
 	return ap.Streamer.Close()
+}
+func (ap *AudioPlayer) runWithAudioPlayerLock(callable func() interface{}) any {
+	initiallyPlaying := !ap.IsPaused()
+	if initiallyPlaying {
+		ap.Pause()
+	}
+	returnValue := callable()
+	if initiallyPlaying {
+		ap.Play()
+	}
+	return returnValue
 }

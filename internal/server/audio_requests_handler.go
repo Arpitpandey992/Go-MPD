@@ -26,22 +26,24 @@ func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, 
 		if len(commands) < 2 {
 			return "", fmt.Errorf("add: filepath missing, expected 1 arg, got 0") // TODO: move this argument parsing logic to a separate centralized module
 		}
-		return arh.AddToPlaybackQueue(commands[1])
+		return arh.addToPlaybackQueue(commands[1])
 	case "play":
-		return arh.PlayCurrentTrackInQueue()
+		return arh.playCurrentTrackInQueue()
 	case "pause":
-		return arh.PauseCurrentlyPlayingTrack()
+		return arh.pauseCurrentlyPlayingTrack()
 	case "seek":
 		if len(commands) < 2 {
 			return "", fmt.Errorf("seek: duration missing, expected 1 arg, got 0")
 		}
-		return arh.SeekCurrentlyPlayingTrack(commands[1])
+		return arh.seekCurrentlyPlayingTrack(commands[1])
+	case "stop":
+		return arh.stopQueuePlayback()
 	default:
 		return "", fmt.Errorf("unknown audio playback command: %s", mainCommand)
 	}
 }
 
-func (arh *AudioRequestsHandler) AddToPlaybackQueue(filePath string) (string, error) {
+func (arh *AudioRequestsHandler) addToPlaybackQueue(filePath string) (string, error) {
 	err := arh.PlaybackManager.AddAudioFileToQueue(filePath)
 	if err != nil {
 		return "", err
@@ -50,14 +52,14 @@ func (arh *AudioRequestsHandler) AddToPlaybackQueue(filePath string) (string, er
 	return fmt.Sprintf("added %v to playback queue", path.Base(filePath)), nil
 }
 
-func (arh *AudioRequestsHandler) PlayCurrentTrackInQueue() (string, error) {
+func (arh *AudioRequestsHandler) playCurrentTrackInQueue() (string, error) {
 	err := arh.PlaybackManager.Play()
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
 }
-func (arh *AudioRequestsHandler) PauseCurrentlyPlayingTrack() (string, error) {
+func (arh *AudioRequestsHandler) pauseCurrentlyPlayingTrack() (string, error) {
 	err := arh.PlaybackManager.Pause()
 	if err != nil {
 		return "", nil
@@ -65,14 +67,22 @@ func (arh *AudioRequestsHandler) PauseCurrentlyPlayingTrack() (string, error) {
 	return fmt.Sprintf("Paused: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
 }
 
-func (arh *AudioRequestsHandler) SeekCurrentlyPlayingTrack(durationString string) (string, error) {
+func (arh *AudioRequestsHandler) seekCurrentlyPlayingTrack(durationString string) (string, error) {
 	duration, err := time.ParseDuration(durationString)
 	if err != nil {
 		return "", err
 	}
 	err = arh.PlaybackManager.Seek(duration)
 	if err != nil {
-		return fmt.Sprintf("Seeked: %s to %v", arh.PlaybackManager.GetCurrentTrackName(), duration), nil
+		return "", err
 	}
-	return "", err
+	return fmt.Sprintf("Seeked: %s to %v", arh.PlaybackManager.GetCurrentTrackName(), duration), nil
+}
+
+func (arh *AudioRequestsHandler) stopQueuePlayback() (string, error) {
+	err := arh.PlaybackManager.Stop()
+	if err != nil {
+		return "", err
+	}
+	return "Stopped Queue Playback", nil
 }

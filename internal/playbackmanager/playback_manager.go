@@ -140,8 +140,11 @@ func (pm *PlaybackManager) Stop() error {
 	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
 		return fmt.Errorf("no active audio file in queue")
 	}
-	pm.audioPlayer.Stop()
-	return nil
+	err := pm.Pause()
+	if err != nil {
+		return err
+	}
+	return pm.Seek(0)
 }
 
 func (pm *PlaybackManager) Seek(seekTime time.Duration) error {
