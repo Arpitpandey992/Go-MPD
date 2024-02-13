@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/arpitpandey992/go-mpd/internal/audioplayer"
-	"github.com/gopxl/beep"
 	"github.com/gopxl/beep/speaker"
 )
 
@@ -53,7 +52,7 @@ func CreatePlaybackManager() *PlaybackManager {
 		trackPlaybackFinished: make(chan bool),
 		newAudioPlayerCreated: make(chan bool),
 	}
-	_ = speaker.Init(beep.SampleRate(44100), 0) // Initializing the speaker, resampling must be done after creation of AudioPlayer
+	// _ = speaker.Init(beep.SampleRate(44100), 0) // Initializing the speaker, resampling must be done after creation of AudioPlayer, TODO: use this later when resampling is implemented
 	go playbackManager.waitAndManagePlayback()
 	return &playbackManager
 }
@@ -101,6 +100,11 @@ func (pm *PlaybackManager) Next() {
 		pm.isQueuePaused = true
 		log.Print("reached the end of playback queue")
 		return
+	} else if !pm.isQueuePaused {
+		pm.isQueuePaused = true // done to not throw exception on hitting Play(), also, it is accurate that after audioPlayer is closed, the queue is paused for a split second
+		go func() {
+			_ = pm.Play() // TODO for far future: instead of just invoking Play(), call a separate function which handles the transition between tracks
+		}()
 	}
 }
 
