@@ -112,7 +112,7 @@ func (pm *PlaybackManager) Play() error {
 	if pm.QueuePosition == len(pm.playbackQueue) {
 		return fmt.Errorf("no active audio file in queue")
 	}
-	if pm.audioPlayer == nil { // TODO: This causes race condition, Protect this section with a Mutex, use double-checked locking for optimization
+	if pm.audioPlayer == nil { // TODO: This causes race condition, Protect this section with a Mutex, use double-checked locking for optimization, similar situation as singleton in C++
 		<-pm.newAudioPlayerCreated
 	}
 	if !pm.isQueuePaused {

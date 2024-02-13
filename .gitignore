@@ -20,5 +20,9 @@
 # Go workspace file
 go.work
 
+# Macos temporary file
+.DS_Store
+
 #debugging files
 __debug*
+independent_test_file.*
