@@ -5,6 +5,7 @@ import (
 	"log"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/arpitpandey992/go-mpd/internal/audioplayer"
@@ -17,6 +18,8 @@ look at individual TODO marked around code
 * improve logging to be multilevel
 * move pm.playbackQueue[pm.QueuePosition] to a function for getting currently playing track's name (and path as well)
 * make add AudioFilesToQueue non blocking
+* move the initSpeaker logic to audio_player later to fully decouple beep from playback_manager
+* Then convert the AudioPlayer to an interface where we can later use oto as well, BeepAudioPlayer can implement AudioPlayer
 */
 
 // const (
@@ -35,23 +38,35 @@ type PlaybackManager struct {
 	playbackQueue []string // TODO -> move from slice of string to a slice of some interface object for flexibility
 	isQueuePaused bool
 
-	// Internal Channels for synchronization
-	nextTrackAdded        chan bool
+	// Internal variables for synchronization
+	fileReadyForPlayback  chan bool
 	trackPlaybackFinished chan bool
 	newAudioPlayerCreated chan bool
+
+	fileReadyForPlaybackMutex *sync.Mutex // explicitly keeping it a pointer for better understanding
+	audioPlayerCreationMutex  *sync.Mutex
+
+	fileReadyForPlaybackConditionalVariable *sync.Cond
+	audioPlayerCreationConditionalVariable  *sync.Cond
 }
 
 func CreatePlaybackManager() *PlaybackManager {
 	playbackManager := PlaybackManager{
-		QueuePosition:         0,
-		QueuePlaybackFinished: make(chan bool),
-		playbackQueue:         []string{},
-		audioPlayer:           nil,
-		isQueuePaused:         true,
-		nextTrackAdded:        make(chan bool),
-		trackPlaybackFinished: make(chan bool),
-		newAudioPlayerCreated: make(chan bool),
+		QueuePosition:             0,
+		QueuePlaybackFinished:     make(chan bool),
+		playbackQueue:             []string{},
+		audioPlayer:               nil,
+		isQueuePaused:             true,
+		fileReadyForPlayback:      make(chan bool),
+		trackPlaybackFinished:     make(chan bool),
+		newAudioPlayerCreated:     make(chan bool),
+		fileReadyForPlaybackMutex: &sync.Mutex{},
+		audioPlayerCreationMutex:  &sync.Mutex{},
 	}
+	// Initializing Conditional Variables
+	playbackManager.fileReadyForPlaybackConditionalVariable = sync.NewCond(playbackManager.fileReadyForPlaybackMutex)
+	playbackManager.audioPlayerCreationConditionalVariable = sync.NewCond(playbackManager.audioPlayerCreationMutex)
+
 	// _ = speaker.Init(beep.SampleRate(44100), 0) // Initializing the speaker, resampling must be done after creation of AudioPlayer, TODO: use this later when resampling is implemented
 	go playbackManager.waitAndManagePlayback()
 	return &playbackManager
@@ -80,26 +95,44 @@ func (pm *PlaybackManager) AddAudioFileToQueue(filePath string) error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		pm.nextTrackAdded <- true
-	}() // Trying to simulate an infinite buffer, instead of blocking here, this will send the signal at it's own leisure
+
+	doubleCheckedLock(pm.QueuePosition == len(pm.playbackQueue), pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Broadcast() })
 	pm.playbackQueue = append(pm.playbackQueue, filePath)
 	return nil
 }
 
 func (pm *PlaybackManager) Next() {
-	if pm.audioPlayer != nil {
-		pm.audioPlayer.Close()
-		pm.audioPlayer = nil
+	err := pm.moveQueuePosition(1)
+	if err != nil {
+		log.Print(err)
+		return
 	}
-	pm.QueuePosition++
 	if pm.QueuePosition == len(pm.playbackQueue) {
 		go func() {
-			pm.QueuePlaybackFinished <- true
+			pm.QueuePlaybackFinished <- true // TODO: change to a synchronization variable
 		}()
 		pm.isQueuePaused = true
 		log.Print("reached the end of playback queue")
+	} else if !pm.isQueuePaused {
+		pm.isQueuePaused = true // done to not throw exception on hitting Play(), also, it is accurate that after audioPlayer is closed, the queue is paused for a split second
+		go func() {
+			_ = pm.Play() // TODO for far future: instead of just invoking Play(), call a separate function which handles the transition between tracks
+		}()
+	}
+}
+
+func (pm *PlaybackManager) Previous() {
+	err := pm.moveQueuePosition(-1)
+	if err != nil {
+		log.Print(err)
 		return
+	}
+	if pm.QueuePosition == len(pm.playbackQueue) {
+		go func() {
+			pm.QueuePlaybackFinished <- true // TODO: change to a synchronization variable
+		}()
+		pm.isQueuePaused = true
+		log.Print("reached the end of playback queue")
 	} else if !pm.isQueuePaused {
 		pm.isQueuePaused = true // done to not throw exception on hitting Play(), also, it is accurate that after audioPlayer is closed, the queue is paused for a split second
 		go func() {
@@ -112,9 +145,7 @@ func (pm *PlaybackManager) Play() error {
 	if pm.QueuePosition == len(pm.playbackQueue) {
 		return fmt.Errorf("no active audio file in queue")
 	}
-	if pm.audioPlayer == nil { // TODO: This causes race condition, Protect this section with a Mutex, use double-checked locking for optimization, similar situation as singleton in C++
-		<-pm.newAudioPlayerCreated
-	}
+	doubleCheckedLock(pm.audioPlayer == nil, pm.audioPlayerCreationMutex, func() { pm.audioPlayerCreationConditionalVariable.Wait() })
 	if !pm.isQueuePaused {
 		return fmt.Errorf("queue is already playing")
 	}
@@ -157,10 +188,15 @@ func (pm *PlaybackManager) Seek(seekTime time.Duration) error {
 // Private Functions
 func (pm *PlaybackManager) waitAndManagePlayback() {
 	for {
-		<-pm.nextTrackAdded // creation of new AudioPlayer is blocked till a new track is added
+		doubleCheckedLock(pm.audioPlayer == nil, pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Wait() })
 
 		log.Printf("creating audioplayer for %s", pm.GetCurrentTrackName())
-		err := pm.createAudioPlayerForCurrentTrack()
+		doOnFinishPlaying := func() {
+			log.Printf("%s finished playing", pm.GetCurrentTrackName())
+			pm.Next()
+			pm.trackPlaybackFinished <- true
+		}
+		err := pm.createAudioPlayerForCurrentTrack(doOnFinishPlaying)
 		if err != nil {
 			log.Printf("error while creating audio player for %s [skipped], error: %v", pm.GetCurrentTrackName(), err)
 			pm.Next()
@@ -171,14 +207,9 @@ func (pm *PlaybackManager) waitAndManagePlayback() {
 	}
 }
 
-func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
-	doOnFinishPlaying := func() {
-		log.Printf("%s finished playing", pm.GetCurrentTrackName())
-		pm.Next()
-		go func() {
-			pm.trackPlaybackFinished <- true
-		}()
-	}
+func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying func()) error {
+	pm.audioPlayerCreationMutex.Lock()
+	defer pm.audioPlayerCreationMutex.Unlock()
 	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying)
 	if err != nil {
 		return err
@@ -188,9 +219,7 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		pm.newAudioPlayerCreated <- true
-	}()
+	pm.audioPlayerCreationConditionalVariable.Broadcast()
 	log.Print("new audioplayer created successfully")
 	return nil
 }
@@ -213,4 +242,39 @@ func (pm *PlaybackManager) GetCurrentTrackName() string {
 		return path.Base(filePath)
 	}
 	return "[Nothing in Queue]"
+}
+
+func (pm *PlaybackManager) moveQueuePosition(delta int) error {
+	finalPosition := pm.QueuePosition + delta
+	if finalPosition < 0 || finalPosition > len(pm.playbackQueue) {
+		return fmt.Errorf("invalid queue pointer move request: %d", finalPosition)
+	}
+	// closing the current AudioPlayer
+	if pm.audioPlayer != nil {
+		pm.audioPlayer.Close()
+		pm.audioPlayer = nil
+	}
+	// signal audioplayer creator goroutine
+	pm.signalAudioFileReadyInQueue()
+	return nil
+}
+
+func (pm *PlaybackManager) signalAudioFileReadyInQueue() {
+	pm.fileReadyForPlaybackMutex.Lock()
+	defer pm.fileReadyForPlaybackMutex.Unlock()
+	pm.fileReadyForPlaybackConditionalVariable.Broadcast()
+}
+
+// general functions, TODO: move to utils module
+func doubleCheckedLock(condition bool, mu *sync.Mutex, operation func()) {
+	// if condition evaluates to true, the lock the mutex, perform the operation then unlock the mutex.
+	// if operation is a wait on conditional variable, make sure that the conditional variable releases mu before waiting (automatically handled if initialized with mu)
+	if !condition {
+		return
+	}
+	mu.Lock()
+	if condition {
+		operation()
+	}
+	mu.Unlock()
 }
