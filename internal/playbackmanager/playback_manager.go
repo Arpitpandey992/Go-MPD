@@ -249,7 +249,9 @@ func (pm *PlaybackManager) GetCurrentTrackName() string {
 
 func (pm *PlaybackManager) moveQueuePosition(delta int) error {
 	pm.fileReadyForPlaybackMutex.Lock()
+	pm.audioPlayerCreationMutex.Lock()
 	defer pm.fileReadyForPlaybackMutex.Unlock()
+	defer pm.audioPlayerCreationMutex.Unlock()
 	finalPosition := pm.QueuePosition + delta
 	if finalPosition < 0 || finalPosition > len(pm.playbackQueue) {
 		return fmt.Errorf("invalid queue pointer move request: %d", finalPosition)
@@ -259,6 +261,7 @@ func (pm *PlaybackManager) moveQueuePosition(delta int) error {
 		pm.audioPlayer.Close()
 		pm.audioPlayer = nil
 	}
+	pm.QueuePosition = finalPosition
 	// signal audio file being ready
 	pm.fileReadyForPlaybackConditionalVariable.Broadcast()
 	return nil
@@ -272,10 +275,10 @@ func doubleCheckedLock(condition func() bool, mu *sync.Mutex, operation func()) 
 	// 	return
 	// }
 	mu.Lock()
+	defer mu.Unlock()
 	if condition() {
 		log.Print("debug: Thread started sleeping")
 		operation()
 		log.Print("debug: Thread woke up")
 	}
-	mu.Unlock()
 }
