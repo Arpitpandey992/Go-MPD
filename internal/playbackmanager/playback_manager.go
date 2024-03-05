@@ -20,6 +20,7 @@ look at individual TODO marked around code
 * make add AudioFilesToQueue non blocking
 * move the initSpeaker logic to audio_player later to fully decouple beep from playback_manager
 * Then convert the AudioPlayer to an interface where we can later use oto as well, BeepAudioPlayer can implement AudioPlayer
+* Move the conditional variable Mutex pair to a Struct
 */
 
 // const (
@@ -87,6 +88,7 @@ func (pm *PlaybackManager) AddAudioFilesToQueue(filePaths ...string) error {
 	if !allFilesAddedSuccessfully {
 		return fmt.Errorf("could not add: %s", strings.Join(unsuccessfulAdditions, ","))
 	}
+	log.Print("added all files")
 	return nil
 }
 
@@ -96,8 +98,8 @@ func (pm *PlaybackManager) AddAudioFileToQueue(filePath string) error {
 		return err
 	}
 
-	doubleCheckedLock(pm.QueuePosition == len(pm.playbackQueue), pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Broadcast() })
 	pm.playbackQueue = append(pm.playbackQueue, filePath)
+	doubleCheckedLock(func() bool { return pm.QueuePosition+1 == len(pm.playbackQueue) }, pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Broadcast() })
 	return nil
 }
 
@@ -142,10 +144,11 @@ func (pm *PlaybackManager) Previous() {
 }
 
 func (pm *PlaybackManager) Play() error {
+	log.Print("debug: play() called")
 	if pm.QueuePosition == len(pm.playbackQueue) {
 		return fmt.Errorf("no active audio file in queue")
 	}
-	doubleCheckedLock(pm.audioPlayer == nil, pm.audioPlayerCreationMutex, func() { pm.audioPlayerCreationConditionalVariable.Wait() })
+	doubleCheckedLock(func() bool { return pm.audioPlayer == nil }, pm.audioPlayerCreationMutex, func() { pm.audioPlayerCreationConditionalVariable.Wait() })
 	if !pm.isQueuePaused {
 		return fmt.Errorf("queue is already playing")
 	}
@@ -188,7 +191,7 @@ func (pm *PlaybackManager) Seek(seekTime time.Duration) error {
 // Private Functions
 func (pm *PlaybackManager) waitAndManagePlayback() {
 	for {
-		doubleCheckedLock(pm.audioPlayer == nil, pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Wait() })
+		doubleCheckedLock(func() bool { return pm.QueuePosition == len(pm.playbackQueue) }, pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Wait() })
 
 		log.Printf("creating audioplayer for %s", pm.GetCurrentTrackName())
 		doOnFinishPlaying := func() {
@@ -209,7 +212,6 @@ func (pm *PlaybackManager) waitAndManagePlayback() {
 
 func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying func()) error {
 	pm.audioPlayerCreationMutex.Lock()
-	defer pm.audioPlayerCreationMutex.Unlock()
 	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying)
 	if err != nil {
 		return err
@@ -221,6 +223,7 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying fu
 	}
 	pm.audioPlayerCreationConditionalVariable.Broadcast()
 	log.Print("new audioplayer created successfully")
+	pm.audioPlayerCreationMutex.Unlock()
 	return nil
 }
 
@@ -245,6 +248,8 @@ func (pm *PlaybackManager) GetCurrentTrackName() string {
 }
 
 func (pm *PlaybackManager) moveQueuePosition(delta int) error {
+	pm.fileReadyForPlaybackMutex.Lock()
+	defer pm.fileReadyForPlaybackMutex.Unlock()
 	finalPosition := pm.QueuePosition + delta
 	if finalPosition < 0 || finalPosition > len(pm.playbackQueue) {
 		return fmt.Errorf("invalid queue pointer move request: %d", finalPosition)
@@ -254,27 +259,23 @@ func (pm *PlaybackManager) moveQueuePosition(delta int) error {
 		pm.audioPlayer.Close()
 		pm.audioPlayer = nil
 	}
-	// signal audioplayer creator goroutine
-	pm.signalAudioFileReadyInQueue()
+	// signal audio file being ready
+	pm.fileReadyForPlaybackConditionalVariable.Broadcast()
 	return nil
 }
 
-func (pm *PlaybackManager) signalAudioFileReadyInQueue() {
-	pm.fileReadyForPlaybackMutex.Lock()
-	defer pm.fileReadyForPlaybackMutex.Unlock()
-	pm.fileReadyForPlaybackConditionalVariable.Broadcast()
-}
-
 // general functions, TODO: move to utils module
-func doubleCheckedLock(condition bool, mu *sync.Mutex, operation func()) {
+func doubleCheckedLock(condition func() bool, mu *sync.Mutex, operation func()) {
 	// if condition evaluates to true, the lock the mutex, perform the operation then unlock the mutex.
 	// if operation is a wait on conditional variable, make sure that the conditional variable releases mu before waiting (automatically handled if initialized with mu)
-	if !condition {
-		return
-	}
+	// if !condition {
+	// 	return
+	// }
 	mu.Lock()
-	if condition {
+	if condition() {
+		log.Print("debug: Thread started sleeping")
 		operation()
+		log.Print("debug: Thread woke up")
 	}
 	mu.Unlock()
 }
