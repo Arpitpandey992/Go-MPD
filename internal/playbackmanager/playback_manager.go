@@ -40,14 +40,12 @@ type PlaybackManager struct {
 	isQueuePaused bool
 
 	// Internal variables for synchronization
-	fileReadyForPlayback  chan bool
 	trackPlaybackFinished chan bool
-	newAudioPlayerCreated chan bool
 
 	fileReadyForPlaybackMutex *sync.Mutex // explicitly keeping it a pointer for better understanding
 	audioPlayerCreationMutex  *sync.Mutex
 
-	fileReadyForPlaybackConditionalVariable *sync.Cond
+	fileReadyForPlaybackConditionalVariable *sync.Cond //TODO: move mutex, cond var pair to a struct
 	audioPlayerCreationConditionalVariable  *sync.Cond
 }
 
@@ -58,9 +56,7 @@ func CreatePlaybackManager() *PlaybackManager {
 		playbackQueue:             []string{},
 		audioPlayer:               nil,
 		isQueuePaused:             true,
-		fileReadyForPlayback:      make(chan bool),
 		trackPlaybackFinished:     make(chan bool),
-		newAudioPlayerCreated:     make(chan bool),
 		fileReadyForPlaybackMutex: &sync.Mutex{},
 		audioPlayerCreationMutex:  &sync.Mutex{},
 	}
