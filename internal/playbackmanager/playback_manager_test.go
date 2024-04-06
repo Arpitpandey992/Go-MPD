@@ -2,6 +2,7 @@ package playbackmanager
 
 import (
 	"testing"
+	"time"
 )
 
 func TestPlaybackManager(t *testing.T) {
@@ -16,6 +17,16 @@ func TestPlaybackManager(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	go func() {
+		_ = playbackManager.Play()
+	}()
+	time.Sleep(time.Second * 9)
+	println("stopping playback of current track")
+	_ = playbackManager.Stop()
+	time.Sleep(time.Second * 3)
+	println("playing again")
 	_ = playbackManager.Play()
+	// println("testing next()")
+	// _ = playbackManager.Next()
 	<-playbackManager.QueuePlaybackFinished
 }

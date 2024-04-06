@@ -37,32 +37,27 @@ type PlaybackManager struct {
 	// Internal Variables
 	audioPlayer   *audioplayer.AudioPlayer
 	playbackQueue []string // TODO -> move from slice of string to a slice of some interface object for flexibility
-	isQueuePaused bool
+	isQueuePaused bool     // TODO -> synchronize this variable
 
 	// Internal variables for synchronization
 	trackPlaybackFinished chan bool
 
-	fileReadyForPlaybackMutex *sync.Mutex // explicitly keeping it a pointer for better understanding
-	audioPlayerCreationMutex  *sync.Mutex
-
-	fileReadyForPlaybackConditionalVariable *sync.Cond //TODO: move mutex, cond var pair to a struct
+	fileReadyForPlaybackConditionalVariable *sync.Cond
 	audioPlayerCreationConditionalVariable  *sync.Cond
 }
 
 func CreatePlaybackManager() *PlaybackManager {
 	playbackManager := PlaybackManager{
-		QueuePosition:             0,
-		QueuePlaybackFinished:     make(chan bool),
-		playbackQueue:             []string{},
-		audioPlayer:               nil,
-		isQueuePaused:             true,
-		trackPlaybackFinished:     make(chan bool),
-		fileReadyForPlaybackMutex: &sync.Mutex{},
-		audioPlayerCreationMutex:  &sync.Mutex{},
+		QueuePosition:                           0,
+		QueuePlaybackFinished:                   make(chan bool),
+		playbackQueue:                           []string{},
+		audioPlayer:                             nil,
+		isQueuePaused:                           true,
+		trackPlaybackFinished:                   make(chan bool),
+		fileReadyForPlaybackConditionalVariable: sync.NewCond(&sync.Mutex{}),
+		audioPlayerCreationConditionalVariable:  sync.NewCond(&sync.Mutex{}),
 	}
 	// Initializing Conditional Variables
-	playbackManager.fileReadyForPlaybackConditionalVariable = sync.NewCond(playbackManager.fileReadyForPlaybackMutex)
-	playbackManager.audioPlayerCreationConditionalVariable = sync.NewCond(playbackManager.audioPlayerCreationMutex)
 
 	// _ = speaker.Init(beep.SampleRate(44100), 0) // Initializing the speaker, resampling must be done after creation of AudioPlayer, TODO: use this later when resampling is implemented
 	go playbackManager.waitAndManagePlayback()
@@ -95,15 +90,18 @@ func (pm *PlaybackManager) AddAudioFileToQueue(filePath string) error {
 	}
 
 	pm.playbackQueue = append(pm.playbackQueue, filePath)
-	doubleCheckedLock(func() bool { return pm.QueuePosition+1 == len(pm.playbackQueue) }, pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Broadcast() })
+	if pm.QueuePosition+1 == len(pm.playbackQueue) {
+		pm.fileReadyForPlaybackConditionalVariable.Broadcast()
+	}
 	return nil
 }
 
-func (pm *PlaybackManager) Next() {
+func (pm *PlaybackManager) Next() error {
+	// _ = pm.Stop()
+	log.Printf("debug: Next() called")
 	err := pm.moveQueuePosition(1)
 	if err != nil {
-		log.Print(err)
-		return
+		return err
 	}
 	if pm.QueuePosition == len(pm.playbackQueue) {
 		go func() {
@@ -117,6 +115,7 @@ func (pm *PlaybackManager) Next() {
 			_ = pm.Play() // TODO for far future: instead of just invoking Play(), call a separate function which handles the transition between tracks
 		}()
 	}
+	return nil
 }
 
 func (pm *PlaybackManager) Previous() {
@@ -144,7 +143,13 @@ func (pm *PlaybackManager) Play() error {
 	if pm.QueuePosition == len(pm.playbackQueue) {
 		return fmt.Errorf("no active audio file in queue")
 	}
-	doubleCheckedLock(func() bool { return pm.audioPlayer == nil }, pm.audioPlayerCreationMutex, func() { pm.audioPlayerCreationConditionalVariable.Wait() })
+	if pm.audioPlayer == nil {
+		pm.audioPlayerCreationConditionalVariable.L.Lock()
+		if pm.audioPlayer == nil {
+			pm.audioPlayerCreationConditionalVariable.Wait()
+		}
+		pm.audioPlayerCreationConditionalVariable.L.Unlock()
+	}
 	if !pm.isQueuePaused {
 		return fmt.Errorf("queue is already playing")
 	}
@@ -187,18 +192,30 @@ func (pm *PlaybackManager) Seek(seekTime time.Duration) error {
 // Private Functions
 func (pm *PlaybackManager) waitAndManagePlayback() {
 	for {
-		doubleCheckedLock(func() bool { return pm.QueuePosition == len(pm.playbackQueue) }, pm.fileReadyForPlaybackMutex, func() { pm.fileReadyForPlaybackConditionalVariable.Wait() })
+		if pm.QueuePosition == len(pm.playbackQueue) {
+			pm.fileReadyForPlaybackConditionalVariable.L.Lock()
+			if pm.QueuePosition == len(pm.playbackQueue) {
+				pm.fileReadyForPlaybackConditionalVariable.Wait()
+			}
+			pm.fileReadyForPlaybackConditionalVariable.L.Unlock()
+		}
 
 		log.Printf("creating audioplayer for %s", pm.GetCurrentTrackName())
 		doOnFinishPlaying := func() {
 			log.Printf("%s finished playing", pm.GetCurrentTrackName())
-			pm.Next()
+			err := pm.Next()
+			if err != nil {
+				log.Print(err)
+			}
 			pm.trackPlaybackFinished <- true
 		}
 		err := pm.createAudioPlayerForCurrentTrack(doOnFinishPlaying)
 		if err != nil {
 			log.Printf("error while creating audio player for %s [skipped], error: %v", pm.GetCurrentTrackName(), err)
-			pm.Next()
+			err := pm.Next()
+			if err != nil {
+				log.Print(err)
+			}
 		} else {
 			log.Printf("waiting for %s to finish playing", pm.GetCurrentTrackName())
 			<-pm.trackPlaybackFinished // blocking till playback is finished
@@ -207,7 +224,7 @@ func (pm *PlaybackManager) waitAndManagePlayback() {
 }
 
 func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying func()) error {
-	pm.audioPlayerCreationMutex.Lock()
+	pm.audioPlayerCreationConditionalVariable.L.Lock()
 	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying)
 	if err != nil {
 		return err
@@ -219,7 +236,7 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying fu
 	}
 	pm.audioPlayerCreationConditionalVariable.Broadcast()
 	log.Print("new audioplayer created successfully")
-	pm.audioPlayerCreationMutex.Unlock()
+	pm.audioPlayerCreationConditionalVariable.L.Unlock()
 	return nil
 }
 
@@ -244,14 +261,20 @@ func (pm *PlaybackManager) GetCurrentTrackName() string {
 }
 
 func (pm *PlaybackManager) moveQueuePosition(delta int) error {
-	pm.fileReadyForPlaybackMutex.Lock()
-	pm.audioPlayerCreationMutex.Lock()
-	defer pm.fileReadyForPlaybackMutex.Unlock()
-	defer pm.audioPlayerCreationMutex.Unlock()
 	finalPosition := pm.QueuePosition + delta
+	/*
+		allows the following final positions:
+		position:             0, 1, ..., n-2, n-1, n
+		music file available: Y, Y, ..., Y  , Y  , N
+		So, the queue position can reach just next to the last available track at which point it should be propagated that Queue is finished
+	*/
 	if finalPosition < 0 || finalPosition > len(pm.playbackQueue) {
 		return fmt.Errorf("invalid queue pointer move request: %d", finalPosition)
 	}
+	pm.fileReadyForPlaybackConditionalVariable.L.Lock()
+	pm.audioPlayerCreationConditionalVariable.L.Lock()
+	defer pm.fileReadyForPlaybackConditionalVariable.L.Unlock()
+	defer pm.audioPlayerCreationConditionalVariable.L.Unlock()
 	// closing the current AudioPlayer
 	if pm.audioPlayer != nil {
 		pm.audioPlayer.Close()
@@ -261,20 +284,4 @@ func (pm *PlaybackManager) moveQueuePosition(delta int) error {
 	// signal audio file being ready
 	pm.fileReadyForPlaybackConditionalVariable.Broadcast()
 	return nil
-}
-
-// general functions, TODO: move to utils module
-func doubleCheckedLock(condition func() bool, mu *sync.Mutex, operation func()) {
-	// if condition evaluates to true, the lock the mutex, perform the operation then unlock the mutex.
-	// if operation is a wait on conditional variable, make sure that the conditional variable releases mu before waiting (automatically handled if initialized with mu)
-	// if !condition {
-	// 	return
-	// }
-	mu.Lock()
-	defer mu.Unlock()
-	if condition() {
-		log.Print("debug: Thread started sleeping")
-		operation()
-		log.Print("debug: Thread woke up")
-	}
 }

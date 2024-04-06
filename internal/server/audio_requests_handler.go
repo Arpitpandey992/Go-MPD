@@ -36,6 +36,8 @@ func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, 
 			return "", fmt.Errorf("seek: duration missing, expected 1 arg, got 0")
 		}
 		return arh.seekCurrentlyPlayingTrack(commands[1])
+	case "next":
+		return arh.PlaybackManager.Next()
 	case "stop":
 		return arh.stopQueuePlayback()
 	default:

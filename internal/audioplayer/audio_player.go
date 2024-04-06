@@ -22,8 +22,8 @@ func (ap *AudioPlayer) Play() {
 		return
 	}
 	speaker.Lock()
+	defer speaker.Unlock()
 	ap.Ctrl.Paused = false
-	speaker.Unlock()
 }
 
 func (ap *AudioPlayer) Pause() {
@@ -32,8 +32,8 @@ func (ap *AudioPlayer) Pause() {
 		return
 	}
 	speaker.Lock()
+	defer speaker.Unlock()
 	ap.Ctrl.Paused = true
-	speaker.Unlock()
 }
 
 func (ap *AudioPlayer) GetCurrentPosition() time.Duration {
