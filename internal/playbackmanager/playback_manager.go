@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/arpitpandey992/go-mpd/internal/audioplayer"
+	"github.com/gopxl/beep"
 	"github.com/gopxl/beep/speaker"
 )
 
@@ -23,9 +24,9 @@ look at individual TODO marked around code
 * Move the conditional variable Mutex pair to a Struct
 */
 
-// const (
-// 	bufferSize int = 100 // TODO : remove this restriction and try to do this without a buffered channel
-// )
+const (
+	baseSampleRate = 44100 //TODO: make this a quality setting instead since this would mean we are gonna downsample higher sample rate files to 44100 only
+)
 
 type PlaybackManager struct {
 	// Externally visible Variables
@@ -57,9 +58,8 @@ func CreatePlaybackManager() *PlaybackManager {
 		fileReadyForPlaybackConditionalVariable: sync.NewCond(&sync.Mutex{}),
 		audioPlayerCreationConditionalVariable:  sync.NewCond(&sync.Mutex{}),
 	}
-	// Initializing Conditional Variables
-
-	// _ = speaker.Init(beep.SampleRate(44100), 0) // Initializing the speaker, resampling must be done after creation of AudioPlayer, TODO: use this later when resampling is implemented
+	speakerSampleRate := beep.SampleRate(baseSampleRate)
+	_ = speaker.Init(speakerSampleRate, speakerSampleRate.N(time.Second/10))
 	go playbackManager.waitAndManagePlayback()
 	return &playbackManager
 }
@@ -97,7 +97,6 @@ func (pm *PlaybackManager) AddAudioFileToQueue(filePath string) error {
 }
 
 func (pm *PlaybackManager) Next() error {
-	// _ = pm.Stop()
 	log.Printf("debug: Next() called")
 	err := pm.moveQueuePosition(1)
 	if err != nil {
@@ -118,24 +117,19 @@ func (pm *PlaybackManager) Next() error {
 	return nil
 }
 
-func (pm *PlaybackManager) Previous() {
+func (pm *PlaybackManager) Previous() error {
+	log.Printf("debug: Previous() called")
 	err := pm.moveQueuePosition(-1)
 	if err != nil {
-		log.Print(err)
-		return
+		return err
 	}
-	if pm.QueuePosition == len(pm.playbackQueue) {
-		go func() {
-			pm.QueuePlaybackFinished <- true // TODO: change to a synchronization variable
-		}()
-		pm.isQueuePaused = true
-		log.Print("reached the end of playback queue")
-	} else if !pm.isQueuePaused {
+	if !pm.isQueuePaused {
 		pm.isQueuePaused = true // done to not throw exception on hitting Play(), also, it is accurate that after audioPlayer is closed, the queue is paused for a split second
 		go func() {
 			_ = pm.Play() // TODO for far future: instead of just invoking Play(), call a separate function which handles the transition between tracks
 		}()
 	}
+	return nil
 }
 
 func (pm *PlaybackManager) Play() error {
@@ -230,26 +224,22 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying fu
 		return err
 	}
 	pm.audioPlayer = ap
-	err = pm.initSpeakerOrResample()
-	if err != nil {
-		return err
-	}
+	pm.resampleTrackIfNeeded()
 	pm.audioPlayerCreationConditionalVariable.Broadcast()
 	log.Print("new audioplayer created successfully")
 	pm.audioPlayerCreationConditionalVariable.L.Unlock()
 	return nil
 }
 
-func (pm *PlaybackManager) initSpeakerOrResample() error {
-	// TODO: Init at the start only, then Resample every time
-	// make sure this init call only happens if the new samplerate is different from the earlier playing samplerate
-	// resample should be used here, but there is a quality concern as it resamples it
-	err := speaker.Init(pm.audioPlayer.Format.SampleRate, pm.audioPlayer.Format.SampleRate.N(time.Second/10))
-	if err != nil {
-		return err
+func (pm *PlaybackManager) resampleTrackIfNeeded() {
+	newSampleRate := pm.audioPlayer.Format.SampleRate
+	if int32(newSampleRate) != baseSampleRate {
+		log.Printf("resampling %s from %d to %d", pm.GetCurrentTrackName(), int32(newSampleRate), baseSampleRate)
+		resampled := beep.Resample(4, newSampleRate, beep.SampleRate(baseSampleRate), pm.audioPlayer.Ctrl)
+		speaker.Play(resampled)
+	} else {
+		speaker.Play(pm.audioPlayer.Ctrl)
 	}
-	speaker.Play(pm.audioPlayer.Ctrl)
-	return nil
 }
 
 func (pm *PlaybackManager) GetCurrentTrackName() string {

@@ -37,7 +37,9 @@ func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, 
 		}
 		return arh.seekCurrentlyPlayingTrack(commands[1])
 	case "next":
-		return arh.PlaybackManager.Next()
+		return arh.next()
+	case "prev":
+		return arh.previous()
 	case "stop":
 		return arh.stopQueuePlayback()
 	default:
@@ -87,4 +89,20 @@ func (arh *AudioRequestsHandler) stopQueuePlayback() (string, error) {
 		return "", err
 	}
 	return "Stopped Queue Playback", nil
+}
+
+func (arh *AudioRequestsHandler) next() (string, error) {
+	err := arh.PlaybackManager.Next()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
+}
+
+func (arh *AudioRequestsHandler) previous() (string, error) {
+	err := arh.PlaybackManager.Previous()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
 }
