@@ -21,9 +21,11 @@ func (ap *AudioPlayer) Play() {
 		log.Print("audioplayer is already playing")
 		return
 	}
+	log.Print("debug: locked speaker")
 	speaker.Lock()
 	defer speaker.Unlock()
 	ap.Ctrl.Paused = false
+	log.Print("debug: unlocked speaker")
 }
 
 func (ap *AudioPlayer) Pause() {
@@ -31,9 +33,11 @@ func (ap *AudioPlayer) Pause() {
 		log.Print("audioplayer is already paused")
 		return
 	}
+	log.Print("debug: locked speaker")
 	speaker.Lock()
 	defer speaker.Unlock()
 	ap.Ctrl.Paused = true
+	log.Print("debug: unlocked speaker")
 }
 
 func (ap *AudioPlayer) GetCurrentPosition() time.Duration {

@@ -141,10 +141,13 @@ func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
 		return nil
 	}
 	doOnFinishPlaying := func() {
-		err := pm.Next()
-		if err != nil {
-			log.Print(err)
-		}
+		// This is ran on a separate go routine because the speaker is locked when the callback function is called. Hence, it causes deadlock as Next() also requires the speaker to be locked.
+		go func() {
+			err := pm.Next()
+			if err != nil {
+				log.Print(err)
+			}
+		}()
 	}
 	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying)
 	if err != nil {
@@ -169,13 +172,13 @@ func (pm *PlaybackManager) resampleTrackIfNeeded() {
 
 func (pm *PlaybackManager) moveQueuePosition(delta int) error {
 
-	finalPosition := pm.QueuePosition + delta
 	/*
 		allows the following final positions:
 		position:             0, 1, ..., n-2, n-1, n
 		music file available: Y, Y, ..., Y  , Y  , N
 		So, the queue position can reach just next to the last available track at which point it should be propagated that Queue is finished
 	*/
+	finalPosition := pm.QueuePosition + delta
 	if finalPosition < 0 || finalPosition > len(pm.playbackQueue) {
 		return fmt.Errorf("invalid queue pointer move request: %d", finalPosition)
 	}
