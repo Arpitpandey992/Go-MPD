@@ -62,6 +62,8 @@ func (ap *AudioPlayer) IsPaused() bool {
 }
 
 func (ap *AudioPlayer) Close() error {
+	ap.Pause()
+	ap.Ctrl = nil
 	return ap.Streamer.Close()
 }
 func (ap *AudioPlayer) runWithAudioPlayerLock(callable func() interface{}) any {

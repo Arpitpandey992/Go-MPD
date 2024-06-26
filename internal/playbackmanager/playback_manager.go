@@ -29,45 +29,37 @@ const (
 )
 
 type PlaybackManager struct {
-	// Externally visible Variables
 	QueuePosition int
 
-	// External Channels for synchronization
 	QueuePlaybackFinished chan bool
 
-	// Internal Variables
 	audioPlayer   *audioplayer.AudioPlayer
 	playbackQueue []string // TODO -> move from slice of string to a slice of some interface object for flexibility
-	isQueuePaused bool     // TODO -> synchronize this variable
 
-	// Internal variables for synchronization
-	trackPlaybackFinished chan bool
-
-	fileReadyForPlaybackConditionalVariable *sync.Cond
-	audioPlayerCreationConditionalVariable  *sync.Cond
+	audioPlayerLock   sync.Mutex
+	playbackQueueLock sync.Mutex
 }
 
 func CreatePlaybackManager() *PlaybackManager {
 	playbackManager := PlaybackManager{
-		QueuePosition:                           0,
-		QueuePlaybackFinished:                   make(chan bool),
-		playbackQueue:                           []string{},
-		audioPlayer:                             nil,
-		isQueuePaused:                           true,
-		trackPlaybackFinished:                   make(chan bool),
-		fileReadyForPlaybackConditionalVariable: sync.NewCond(&sync.Mutex{}),
-		audioPlayerCreationConditionalVariable:  sync.NewCond(&sync.Mutex{}),
+		QueuePosition:         0,
+		QueuePlaybackFinished: make(chan bool),
+		playbackQueue:         []string{},
+		audioPlayer:           nil,
+		audioPlayerLock:       sync.Mutex{},
+		playbackQueueLock:     sync.Mutex{},
 	}
 	speakerSampleRate := beep.SampleRate(baseSampleRate)
 	_ = speaker.Init(speakerSampleRate, speakerSampleRate.N(time.Second/10))
-	go playbackManager.waitAndManagePlayback()
 	return &playbackManager
 }
 
 func (pm *PlaybackManager) AddAudioFilesToQueue(filePaths ...string) error {
+	pm.playbackQueueLock.Lock()
+	defer pm.playbackQueueLock.Unlock()
 	unsuccessfulAdditions := make([]string, 0)
 	for _, filePath := range filePaths {
-		err := pm.AddAudioFileToQueue(filePath)
+		err := pm.addAudioFileToQueue(filePath)
 		if err != nil {
 			log.Printf("could not add: %s, error: %v", filePath, err)
 			unsuccessfulAdditions = append(unsuccessfulAdditions, filePath)
@@ -83,151 +75,84 @@ func (pm *PlaybackManager) AddAudioFilesToQueue(filePaths ...string) error {
 	return nil
 }
 
-func (pm *PlaybackManager) AddAudioFileToQueue(filePath string) error {
-	err := audioplayer.IsFileSupported(filePath)
-	if err != nil {
-		return err
-	}
-
-	pm.playbackQueue = append(pm.playbackQueue, filePath)
-	if pm.QueuePosition+1 == len(pm.playbackQueue) {
-		pm.fileReadyForPlaybackConditionalVariable.Broadcast()
-	}
-	return nil
-}
-
 func (pm *PlaybackManager) Next() error {
 	log.Printf("debug: Next() called")
-	err := pm.moveQueuePosition(1)
-	if err != nil {
-		return err
-	}
-	if pm.QueuePosition == len(pm.playbackQueue) {
-		go func() {
-			pm.QueuePlaybackFinished <- true // TODO: change to a synchronization variable
-		}()
-		pm.isQueuePaused = true
-		log.Print("reached the end of playback queue")
-	} else if !pm.isQueuePaused {
-		pm.isQueuePaused = true // done to not throw exception on hitting Play(), also, it is accurate that after audioPlayer is closed, the queue is paused for a split second
-		go func() {
-			_ = pm.Play() // TODO for far future: instead of just invoking Play(), call a separate function which handles the transition between tracks
-		}()
-	}
-	return nil
+	pm.audioPlayerLock.Lock()
+	pm.playbackQueueLock.Lock()
+	defer pm.audioPlayerLock.Unlock()
+	defer pm.playbackQueueLock.Unlock()
+	return pm.next()
 }
 
 func (pm *PlaybackManager) Previous() error {
 	log.Printf("debug: Previous() called")
-	err := pm.moveQueuePosition(-1)
-	if err != nil {
-		return err
-	}
-	if !pm.isQueuePaused {
-		pm.isQueuePaused = true // done to not throw exception on hitting Play(), also, it is accurate that after audioPlayer is closed, the queue is paused for a split second
-		go func() {
-			_ = pm.Play() // TODO for far future: instead of just invoking Play(), call a separate function which handles the transition between tracks
-		}()
-	}
-	return nil
+	pm.audioPlayerLock.Lock()
+	pm.playbackQueueLock.Lock()
+	defer pm.audioPlayerLock.Unlock()
+	defer pm.playbackQueueLock.Unlock()
+	return pm.previous()
 }
 
 func (pm *PlaybackManager) Play() error {
-	log.Print("debug: play() called")
-	if pm.QueuePosition == len(pm.playbackQueue) {
-		return fmt.Errorf("no active audio file in queue")
-	}
-	if pm.audioPlayer == nil {
-		pm.audioPlayerCreationConditionalVariable.L.Lock()
-		if pm.audioPlayer == nil {
-			pm.audioPlayerCreationConditionalVariable.Wait()
-		}
-		pm.audioPlayerCreationConditionalVariable.L.Unlock()
-	}
-	if !pm.isQueuePaused {
-		return fmt.Errorf("queue is already playing")
-	}
-	pm.isQueuePaused = false // TODO: Protect this variable with a mutex
-	log.Printf("playing: %s", pm.GetCurrentTrackName())
-	pm.audioPlayer.Play()
-	return nil
+	pm.audioPlayerLock.Lock()
+	defer pm.audioPlayerLock.Unlock()
+	return pm.play()
 }
 
 func (pm *PlaybackManager) Pause() error {
-	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
-		return fmt.Errorf("no active audio file in queue")
-	}
-	if pm.isQueuePaused {
-		return fmt.Errorf("queue is already paused")
-	}
-	pm.isQueuePaused = true
-	pm.audioPlayer.Pause()
-	return nil
+	pm.audioPlayerLock.Lock()
+	pm.playbackQueueLock.Lock()
+	defer pm.audioPlayerLock.Unlock()
+	defer pm.playbackQueueLock.Unlock()
+	return pm.pause()
 }
 
 func (pm *PlaybackManager) Stop() error {
-	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
-		return fmt.Errorf("no active audio file in queue")
-	}
-	err := pm.Pause()
-	if err != nil {
-		return err
-	}
-	return pm.Seek(0)
+	pm.audioPlayerLock.Lock()
+	pm.playbackQueueLock.Lock()
+	defer pm.audioPlayerLock.Unlock()
+	defer pm.playbackQueueLock.Unlock()
+	return pm.stop()
 }
 
 func (pm *PlaybackManager) Seek(seekTime time.Duration) error {
+	pm.audioPlayerLock.Lock()
+	pm.playbackQueueLock.Lock()
+	defer pm.audioPlayerLock.Unlock()
+	defer pm.playbackQueueLock.Unlock()
+
 	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
 		return fmt.Errorf("no active audio file in queue")
 	}
 	return pm.audioPlayer.Seek(seekTime)
 }
 
-// Private Functions
-func (pm *PlaybackManager) waitAndManagePlayback() {
-	for {
-		if pm.QueuePosition == len(pm.playbackQueue) {
-			pm.fileReadyForPlaybackConditionalVariable.L.Lock()
-			if pm.QueuePosition == len(pm.playbackQueue) {
-				pm.fileReadyForPlaybackConditionalVariable.Wait()
-			}
-			pm.fileReadyForPlaybackConditionalVariable.L.Unlock()
-		}
-
-		log.Printf("creating audioplayer for %s", pm.GetCurrentTrackName())
-		doOnFinishPlaying := func() {
-			log.Printf("%s finished playing", pm.GetCurrentTrackName())
-			err := pm.Next()
-			if err != nil {
-				log.Print(err)
-			}
-			pm.trackPlaybackFinished <- true
-		}
-		err := pm.createAudioPlayerForCurrentTrack(doOnFinishPlaying)
-		if err != nil {
-			log.Printf("error while creating audio player for %s [skipped], error: %v", pm.GetCurrentTrackName(), err)
-			err := pm.Next()
-			if err != nil {
-				log.Print(err)
-			}
-		} else {
-			log.Printf("waiting for %s to finish playing", pm.GetCurrentTrackName())
-			<-pm.trackPlaybackFinished // blocking till playback is finished
-		}
+func (pm *PlaybackManager) GetCurrentTrackName() string {
+	if pm.QueuePosition >= 0 && pm.QueuePosition < len(pm.playbackQueue) {
+		filePath := pm.playbackQueue[pm.QueuePosition]
+		return path.Base(filePath)
 	}
+	return "[Nothing in Queue]"
 }
 
-func (pm *PlaybackManager) createAudioPlayerForCurrentTrack(doOnFinishPlaying func()) error {
-	pm.audioPlayerCreationConditionalVariable.L.Lock()
+func (pm *PlaybackManager) createAudioPlayerForCurrentTrack() error {
+	log.Printf("creating audioplayer for: %s", pm.GetCurrentTrackName())
+	if pm.audioPlayer != nil {
+		return nil
+	}
+	doOnFinishPlaying := func() {
+		err := pm.Next()
+		if err != nil {
+			log.Print(err)
+		}
+	}
 	ap, err := audioplayer.CreateAudioPlayer(pm.playbackQueue[pm.QueuePosition], doOnFinishPlaying)
 	if err != nil {
 		return err
 	}
 	pm.audioPlayer = ap
 	pm.resampleTrackIfNeeded()
-	pm.audioPlayerCreationConditionalVariable.Broadcast()
 	log.Print("new audioplayer created successfully")
-	pm.audioPlayerCreationConditionalVariable.L.Unlock()
 	return nil
 }
 
@@ -242,15 +167,8 @@ func (pm *PlaybackManager) resampleTrackIfNeeded() {
 	}
 }
 
-func (pm *PlaybackManager) GetCurrentTrackName() string {
-	if pm.QueuePosition >= 0 && pm.QueuePosition < len(pm.playbackQueue) {
-		filePath := pm.playbackQueue[pm.QueuePosition]
-		return path.Base(filePath)
-	}
-	return "[Nothing in Queue]"
-}
-
 func (pm *PlaybackManager) moveQueuePosition(delta int) error {
+
 	finalPosition := pm.QueuePosition + delta
 	/*
 		allows the following final positions:
@@ -261,17 +179,118 @@ func (pm *PlaybackManager) moveQueuePosition(delta int) error {
 	if finalPosition < 0 || finalPosition > len(pm.playbackQueue) {
 		return fmt.Errorf("invalid queue pointer move request: %d", finalPosition)
 	}
-	pm.fileReadyForPlaybackConditionalVariable.L.Lock()
-	pm.audioPlayerCreationConditionalVariable.L.Lock()
-	defer pm.fileReadyForPlaybackConditionalVariable.L.Unlock()
-	defer pm.audioPlayerCreationConditionalVariable.L.Unlock()
-	// closing the current AudioPlayer
-	if pm.audioPlayer != nil {
-		pm.audioPlayer.Close()
-		pm.audioPlayer = nil
+
+	err := pm.stop()
+	if err != nil {
+		return fmt.Errorf("error while stopping current playback: %s", err.Error())
 	}
 	pm.QueuePosition = finalPosition
-	// signal audio file being ready
-	pm.fileReadyForPlaybackConditionalVariable.Broadcast()
 	return nil
+}
+
+func (pm *PlaybackManager) isQueuePaused() bool {
+	return pm.audioPlayer != nil && pm.audioPlayer.IsPaused()
+}
+
+func (pm *PlaybackManager) addAudioFileToQueue(filePath string) error {
+	err := audioplayer.IsFileSupported(filePath)
+	if err != nil {
+		return err
+	}
+	pm.playbackQueue = append(pm.playbackQueue, filePath)
+	return nil
+}
+
+func (pm *PlaybackManager) play() error {
+	if pm.QueuePosition < 0 {
+		panic(fmt.Sprintf("Queue position: %d is invalid", pm.QueuePosition))
+	}
+	if pm.QueuePosition == len(pm.playbackQueue) {
+		return fmt.Errorf("no active audio file in queue")
+	}
+	if pm.audioPlayer == nil {
+		err := pm.createAudioPlayerForCurrentTrack()
+		if err != nil {
+			return err
+		}
+	}
+	if !pm.isQueuePaused() {
+		return fmt.Errorf("queue is already playing")
+	}
+	log.Printf("playing: %s", pm.GetCurrentTrackName())
+	pm.audioPlayer.Play()
+	return nil
+}
+func (pm *PlaybackManager) pause() error {
+	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
+		return fmt.Errorf("no active audio file in queue")
+	}
+	if pm.isQueuePaused() {
+		return fmt.Errorf("queue is already paused")
+	}
+	pm.audioPlayer.Pause()
+	return nil
+}
+
+func (pm *PlaybackManager) stop() error {
+	if pm.QueuePosition == len(pm.playbackQueue) || pm.audioPlayer == nil {
+		return fmt.Errorf("no active audio file in queue")
+	}
+	err := pm.audioPlayer.Close()
+	if err != nil {
+		return err
+	}
+	pm.audioPlayer = nil
+	return nil
+}
+
+func (pm *PlaybackManager) next() error {
+	initiallyQueuePaused := pm.isQueuePaused()
+	err := pm.moveQueuePosition(1)
+	if err != nil {
+		return err
+	}
+	if pm.QueuePosition == len(pm.playbackQueue) {
+		go func() {
+			pm.QueuePlaybackFinished <- true
+		}()
+		log.Print("reached the end of playback queue")
+		return nil
+	}
+	if initiallyQueuePaused {
+		return nil
+	}
+	err = pm.play()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (pm *PlaybackManager) previous() error {
+	initiallyQueuePaused := pm.isQueuePaused()
+	if pm.QueuePosition != 0 {
+		err := pm.moveQueuePosition(-1)
+		if err != nil {
+			return err
+		}
+	} else {
+		return pm.restartTrack()
+	}
+	if initiallyQueuePaused {
+		return nil
+	}
+	err := pm.play()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (pm *PlaybackManager) restartTrack() error {
+	err := pm.stop()
+	if err != nil {
+		return err
+	}
+	return pm.play()
 }

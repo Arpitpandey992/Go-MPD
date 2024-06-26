@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestPlaybackManager(t *testing.T) {
+func TestPlayPauseStop(t *testing.T) {
 	musicFiles := []string{
 		// "../../music/ricor.flac",
 		"../../music/sample-96kHz24bit.flac",
@@ -18,9 +18,7 @@ func TestPlaybackManager(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	go func() {
-		_ = playbackManager.Play()
-	}()
+	_ = playbackManager.Play()
 	testStop := true
 	if testStop {
 		time.Sleep(time.Second * 9)
@@ -29,8 +27,12 @@ func TestPlaybackManager(t *testing.T) {
 		time.Sleep(time.Second * 3)
 		println("playing again")
 		_ = playbackManager.Play()
-		// println("testing next()")
-		// _ = playbackManager.Next()
+		time.Sleep(time.Second * 4)
+		println("pausing for 3 seconds")
+		_ = playbackManager.Pause()
+		time.Sleep(time.Second * 3)
+		println("playing")
+		_ = playbackManager.Play()
 	}
 	<-playbackManager.QueuePlaybackFinished
 }
@@ -50,7 +52,7 @@ func TestNextPrevious(t *testing.T) {
 	go func() {
 		_ = playbackManager.Play()
 	}()
-	time.Sleep(time.Second * 9)
+	time.Sleep(time.Second * 5)
 	println("Moving to next track")
 	_ = playbackManager.Next()
 	time.Sleep(time.Second * 4)

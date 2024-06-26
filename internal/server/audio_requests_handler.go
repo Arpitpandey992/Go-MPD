@@ -48,7 +48,7 @@ func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, 
 }
 
 func (arh *AudioRequestsHandler) addToPlaybackQueue(filePath string) (string, error) {
-	err := arh.PlaybackManager.AddAudioFileToQueue(filePath)
+	err := arh.PlaybackManager.AddAudioFilesToQueue(filePath)
 	if err != nil {
 		return "", err
 	}
