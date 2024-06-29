@@ -96,7 +96,12 @@ func TestServerSongPlayback(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	sendMessageToServer("audio next", t)
 	time.Sleep(3 * time.Second)
-	sendMessageToServer("audio previous", t)
+	sendMessageToServer("audio prev", t)
+	time.Sleep(3 * time.Second)
+	sendMessageToServer("audio next", t)
+	time.Sleep(50 * time.Millisecond)
+	sendMessageToServer("audio next", t)
+	time.Sleep(7 * time.Second)
 }
 
 func sendMessageToServer(message string, t *testing.T) {
