@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -98,9 +99,7 @@ func TestServerSongPlayback(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	sendMessageToServer("audio prev", t)
 	time.Sleep(3 * time.Second)
-	sendMessageToServer("audio next", t)
-	time.Sleep(50 * time.Millisecond)
-	sendMessageToServer("audio next", t)
+	sendMultipleMessagesToServer([]string{"audio next", "audio next"}, t)
 	time.Sleep(7 * time.Second)
 }
 
@@ -120,4 +119,8 @@ func checkError(err error, t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func sendMultipleMessagesToServer(messages []string, t *testing.T) {
+	sendMessageToServer(strings.Join(messages, server.Delimiter), t)
 }

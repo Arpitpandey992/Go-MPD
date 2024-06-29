@@ -89,34 +89,37 @@ func (server *Server) handleConnection(conn net.Conn, handlers *Handlers) {
 }
 
 func (server *Server) handleIncomingRequest(command string, conn net.Conn, handlers *Handlers) error {
-	chunks := server.breakCommandIntoChunks(command)
-	log.Printf("debug: commands: %s", strings.Join(chunks, ", "))
-	for i, chunk := range chunks {
-		chunks[i] = strings.TrimSpace(chunk)
-	}
-	if len(chunks) == 0 {
-		return nil
-	}
-	requestType := chunks[0]
-	switch requestType {
-	case "ping":
-		err := server.sendMessageToConnectionClient("pong", conn)
-		if err != nil {
-			return fmt.Errorf("error while responding to incoming ping. error: %s", err.Error())
+	commands := server.breakIncomingCommandToMultipleCommands(command)
+	for _, splitCommand := range commands {
+		chunks := server.breakCommandIntoChunks(splitCommand)
+		log.Printf("debug: commands: %s", strings.Join(chunks, ", "))
+		for i, chunk := range chunks {
+			chunks[i] = strings.TrimSpace(chunk)
 		}
-	case "audio":
-		if len(chunks) < 2 {
-			return fmt.Errorf("audio command expects at least one argument")
+		if len(chunks) == 0 {
+			return nil
 		}
-		returnMessage, err := handlers.audioRequestHandler.HandleAudioRequest(chunks[1:])
-		if err != nil {
-			return err
+		requestType := chunks[0]
+		switch requestType {
+		case "ping":
+			err := server.sendMessageToConnectionClient("pong", conn)
+			if err != nil {
+				return fmt.Errorf("error while responding to incoming ping. error: %s", err.Error())
+			}
+		case "audio":
+			if len(chunks) < 2 {
+				return fmt.Errorf("audio command expects at least one argument")
+			}
+			returnMessage, err := handlers.audioRequestHandler.HandleAudioRequest(chunks[1:])
+			if err != nil {
+				return err
+			}
+			if returnMessage != "" {
+				_ = server.sendMessageToConnectionClient(returnMessage, conn)
+			}
+		default:
+			return fmt.Errorf("invalid request type: %s", requestType)
 		}
-		if returnMessage != "" {
-			_ = server.sendMessageToConnectionClient(returnMessage, conn)
-		}
-	default:
-		return fmt.Errorf("invalid request type: %s", requestType)
 	}
 	return nil
 }
@@ -155,6 +158,11 @@ func (server *Server) breakCommandIntoChunks(command string) []string {
 		}
 	}
 	return chunks
+}
+
+func (server *Server) breakIncomingCommandToMultipleCommands(command string) []string {
+	command = strings.TrimSpace(command)
+	return strings.Split(command, server.Delimiter)
 }
 
 func isListenerClosedError(err error) bool {
