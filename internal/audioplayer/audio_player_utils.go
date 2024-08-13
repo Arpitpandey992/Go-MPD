@@ -64,7 +64,7 @@ func getNewAudioPlayer(file *os.File, callbackfunc func()) (*AudioPlayer, error)
 	if logError(err) != nil {
 		return nil, err
 	}
-	
+
 	ctrl := &beep.Ctrl{Streamer: beep.Seq(streamer, beep.Callback(callbackfunc)), Paused: true}
 	return &AudioPlayer{Ctrl: ctrl, Streamer: streamer, Format: format}, nil
 }
