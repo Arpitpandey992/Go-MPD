@@ -1,6 +1,24 @@
 package database
 
-type Tags struct {
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type MediaInfo struct {
+	SampleRate    *int    `json:"sample_rate,omitempty"`
+	Channels      *int    `json:"channels,omitempty"`
+	Bitrate       *int    `json:"bitrate,omitempty"`
+	BitsPerSample *int    `json:"bits_per_sample,omitempty"`
+	Codec         *string `json:"codec,omitempty"`
+}
+
+type AudioFileMetadata struct {
+	FileName  string `json:"file_name"`
+	FilePath  string `json:"file_path"`
+	Extension string `json:"extension"`
+
+	// Tags
 	Title       []string            `json:"title"`
 	Album       []string            `json:"album"`
 	Artist      []string            `json:"artist"`
@@ -16,7 +34,6 @@ type Tags struct {
 	DiscName    []string            `json:"disc_name"`
 	CustomTags  map[string][]string `json:"custom_tags"`
 	Pictures    []string            `json:"pictures"`
-	Extension   string              `json:"extension"`
 
 	// Currently not supported by unigen
 	Genre          *string `json:"genre,omitempty"`
@@ -43,20 +60,14 @@ type Tags struct {
 	Remixer        *string `json:"remixer,omitempty"`
 	Subtitle       *string `json:"subtitle,omitempty"`
 	Website        *string `json:"website,omitempty"`
-}
 
-type MediaInfo struct {
-	SampleRate    *int    `json:"sample_rate,omitempty"`
-	Channels      *int    `json:"channels,omitempty"`
-	Bitrate       *int    `json:"bitrate,omitempty"`
-	BitsPerSample *int    `json:"bits_per_sample,omitempty"`
-	Codec         *string `json:"codec,omitempty"`
-}
-
-type AudioFileMetadata struct {
-	FileName  string    `json:"file_name"`
-	FilePath  string    `json:"file_path"`
-	Extension string    `json:"extension"`
-	Tags      Tags      `json:"tags"`
 	MediaInfo MediaInfo `json:"media_info"`
+}
+
+func (metadata *AudioFileMetadata) ToIndentedJsonString() (string, error) {
+	jsonBytes, err := json.MarshalIndent(metadata, "", "    ")
+	if err != nil {
+		return "", fmt.Errorf("error marshalling to JSON: %w", err)
+	}
+	return string(jsonBytes), nil
 }
