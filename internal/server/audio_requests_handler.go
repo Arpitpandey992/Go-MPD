@@ -4,23 +4,24 @@ import (
 	"fmt"
 	"log"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/arpitpandey992/go-mpd/internal/playbackmanager"
 )
 
 type AudioRequestsHandler struct {
-	PlaybackManager *playbackmanager.PlaybackManager
+	playbackManager *playbackmanager.PlaybackManager
 }
 
 func getNewAudioRequestsHandler() *AudioRequestsHandler {
 	return &AudioRequestsHandler{
-		PlaybackManager: playbackmanager.CreatePlaybackManager(),
+		playbackManager: playbackmanager.CreatePlaybackManager(),
 	}
 }
 
 func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, error) {
-	mainCommand := commands[0]
+	mainCommand := strings.ToLower(commands[0])
 	switch mainCommand {
 	case "add":
 		if len(commands) < 2 {
@@ -48,7 +49,7 @@ func (arh *AudioRequestsHandler) HandleAudioRequest(commands []string) (string, 
 }
 
 func (arh *AudioRequestsHandler) addToPlaybackQueue(filePath string) (string, error) {
-	err := arh.PlaybackManager.AddAudioFilesToQueue(filePath)
+	err := arh.playbackManager.AddAudioFilesToQueue(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -57,18 +58,18 @@ func (arh *AudioRequestsHandler) addToPlaybackQueue(filePath string) (string, er
 }
 
 func (arh *AudioRequestsHandler) playCurrentTrackInQueue() (string, error) {
-	err := arh.PlaybackManager.Play()
+	err := arh.playbackManager.Play()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
+	return fmt.Sprintf("Playing: %s", arh.playbackManager.GetCurrentTrackName()), nil
 }
 func (arh *AudioRequestsHandler) pauseCurrentlyPlayingTrack() (string, error) {
-	err := arh.PlaybackManager.Pause()
+	err := arh.playbackManager.Pause()
 	if err != nil {
 		return "", nil
 	}
-	return fmt.Sprintf("Paused: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
+	return fmt.Sprintf("Paused: %s", arh.playbackManager.GetCurrentTrackName()), nil
 }
 
 func (arh *AudioRequestsHandler) seekCurrentlyPlayingTrack(durationString string) (string, error) {
@@ -76,15 +77,15 @@ func (arh *AudioRequestsHandler) seekCurrentlyPlayingTrack(durationString string
 	if err != nil {
 		return "", err
 	}
-	err = arh.PlaybackManager.Seek(duration)
+	err = arh.playbackManager.Seek(duration)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Seeked: %s to %v", arh.PlaybackManager.GetCurrentTrackName(), duration), nil
+	return fmt.Sprintf("Skipped: %s to %v", arh.playbackManager.GetCurrentTrackName(), duration), nil
 }
 
 func (arh *AudioRequestsHandler) stopQueuePlayback() (string, error) {
-	err := arh.PlaybackManager.Stop()
+	err := arh.playbackManager.Stop()
 	if err != nil {
 		return "", err
 	}
@@ -92,17 +93,17 @@ func (arh *AudioRequestsHandler) stopQueuePlayback() (string, error) {
 }
 
 func (arh *AudioRequestsHandler) next() (string, error) {
-	err := arh.PlaybackManager.Next()
+	err := arh.playbackManager.Next()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
+	return fmt.Sprintf("Playing: %s", arh.playbackManager.GetCurrentTrackName()), nil
 }
 
 func (arh *AudioRequestsHandler) previous() (string, error) {
-	err := arh.PlaybackManager.Previous()
+	err := arh.playbackManager.Previous()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Playing: %s", arh.PlaybackManager.GetCurrentTrackName()), nil
+	return fmt.Sprintf("Playing: %s", arh.playbackManager.GetCurrentTrackName()), nil
 }

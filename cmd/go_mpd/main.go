@@ -14,6 +14,7 @@ func main() {
 		log.Fatal("could get configuration", err)
 	}
 	audioMeilisearchClient := database.GetNewAudioMeiliSearchClient(config)
-	database.SearchWithUserInput(audioMeilisearchClient)
-	server.CreateAndStartServer()
+	// database.SearchWithUserInput(audioMeilisearchClient)
+	server.CreateAndStartServer(audioMeilisearchClient)
+	select {}
 }

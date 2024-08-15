@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/arpitpandey992/go-mpd/internal/config"
+	"github.com/arpitpandey992/go-mpd/internal/database"
 )
 
 var setupComplete bool
@@ -34,10 +37,15 @@ func TestMain(m *testing.M) {
 }
 
 func setup() error {
-	println("starting server")
-	server = CreateAndStartServer()
-	println("connecting to server")
 	var err error
+	println("starting server")
+	config, err := config.GetBaseConfiguration()
+	if err != nil {
+		return err
+	}
+	db := database.GetNewAudioMeiliSearchClient(config)
+	server = CreateAndStartServer(db)
+	println("connecting to server")
 	conn, err = net.Dial("tcp", server.Address)
 	if err != nil {
 		return err

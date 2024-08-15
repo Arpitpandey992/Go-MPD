@@ -2,12 +2,14 @@ package server
 
 import (
 	"fmt"
+	"github.com/arpitpandey992/go-mpd/internal/database"
 	"io"
 	"log"
 	"net"
 	"strings"
 )
 
+// TODO: move these constants to config.yml
 const (
 	DEFAULT_SERVER_PROTOCOL = "tcp"
 	DEFAULT_SERVER_ADDRESS  = "127.0.0.1:6600"
@@ -16,6 +18,7 @@ const (
 
 type Handlers struct {
 	audioRequestHandler *AudioRequestsHandler
+	dbRequestsHandler   *DbRequestsHandler
 }
 
 type Server struct {
@@ -25,7 +28,8 @@ type Server struct {
 	listener  net.Listener
 }
 
-func CreateAndStartServer() *Server {
+func CreateAndStartServer(db *database.AudioMeilisearchClient) *Server {
+	// TODO: make sure to have a close function which will release all resources. Keep a handler ready for managing go routines
 	listener := getListener(DEFAULT_SERVER_PROTOCOL, DEFAULT_SERVER_ADDRESS)
 	server := &Server{
 		Address:   DEFAULT_SERVER_ADDRESS,
@@ -33,7 +37,7 @@ func CreateAndStartServer() *Server {
 		Delimiter: DEFAULT_DELIMITER,
 		listener:  listener,
 	}
-	go server.handleIncomingConnections()
+	go server.handleIncomingConnections(db)
 	return server
 }
 
@@ -41,7 +45,7 @@ func (server *Server) Close() {
 	server.listener.Close()
 }
 
-func (server *Server) handleIncomingConnections() {
+func (server *Server) handleIncomingConnections(db *database.AudioMeilisearchClient) {
 	for {
 		conn, err := server.listener.Accept()
 		if err != nil {
@@ -53,7 +57,7 @@ func (server *Server) handleIncomingConnections() {
 			continue
 		}
 		log.Print("successfully connected with incoming client")
-		handlers := &Handlers{audioRequestHandler: getNewAudioRequestsHandler()}
+		handlers := &Handlers{audioRequestHandler: getNewAudioRequestsHandler(), dbRequestsHandler: getNewDbRequestsHandler(db)}
 		server.sendWelcomeMessageToConnectionClient(conn)
 		go server.handleConnection(conn, handlers)
 	}
@@ -117,6 +121,18 @@ func (server *Server) handleIncomingRequest(command string, conn net.Conn, handl
 			if returnMessage != "" {
 				_ = server.sendMessageToConnectionClient(returnMessage, conn)
 			}
+		case "db":
+			if len(chunks) < 2 {
+				return fmt.Errorf("database command expects at least one argument")
+			}
+			returnMessage, err := handlers.dbRequestsHandler.HandleDbRequest(chunks[1:])
+			if err != nil {
+				return err
+			}
+			if returnMessage != "" {
+				_ = server.sendMessageToConnectionClient(returnMessage, conn)
+			}
+
 		default:
 			return fmt.Errorf("invalid request type: %s", requestType)
 		}
